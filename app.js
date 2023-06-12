@@ -1,60 +1,49 @@
+import { Client, Collection, Events, GatewayIntentBits } from 'discord.js';
 import 'dotenv/config';
-import express from 'express';
-import {
-  InteractionType,
-  InteractionResponseType,
-  InteractionResponseFlags,
-  MessageComponentTypes,
-  ButtonStyleTypes,
-} from 'discord-interactions';
-import { VerifyDiscordRequest, getRandomEmoji, DiscordRequest } from './utils.js';
-import { getShuffledOptions, getResult } from './game.js';
+import sqlite3 from 'sqlite3';
+import { open } from 'sqlite';
+import { ALL_COMMANDS } from './commands/allcommands.js';
 
-// Create an express app
-const app = express();
-// Get port, or default to 3000
-const PORT = process.env.PORT || 3000;
-// Parse request body and verifies incoming requests using discord-interactions package
-app.use(express.json({ verify: VerifyDiscordRequest(process.env.PUBLIC_KEY) }));
+// Create a new client instance
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const db = await open({ filename: '../database/mushi_league.db', driver: sqlite3.Database });
 
-// Store for in-progress games. In production, you'd want to use a DB
-const activeGames = {};
+client.commands = new Collection();
 
-/**
- * Interactions endpoint URL where Discord will send HTTP requests
- */
-app.post('/interactions', async function (req, res) {
-  // Interaction type and data
-  const { type, id, data } = req.body;
+for (const command of ALL_COMMANDS) {
+	// Set a new item in the Collection with the key as the command name and the value as the exported module
+	if ('data' in command && 'execute' in command) {
+		client.commands.set(command.data.name, command);
+	}
+}
 
-  /**
-   * Handle verification requests
-   */
-  if (type === InteractionType.PING) {
-    return res.send({ type: InteractionResponseType.PONG });
-  }
+client.on(Events.InteractionCreate, async interaction => {
+    if (!interaction.isChatInputCommand()) return;
 
-  /**
-   * Handle slash command requests
-   * See https://discord.com/developers/docs/interactions/application-commands#slash-commands
-   */
-  if (type === InteractionType.APPLICATION_COMMAND) {
-    const { name } = data;
+    const command = interaction.client.commands.get(interaction.commandName);
 
-    // "test" command
-    if (name === 'test') {
-      // Send a message into the channel where command was triggered from
-      return res.send({
-        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-        data: {
-          // Fetches a random emoji to send from a helper function
-          content: 'hello world ' + getRandomEmoji(),
-        },
-      });
+    if (!command) {
+        console.error(`No command matching ${interaction.commandName} was found.`);
+        return;
     }
-  }
+
+    try {
+        await command.execute(interaction, db);
+    } catch (error) {
+        console.error(error);
+        if (interaction.replied || interaction.deferred) {
+            await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
+        } else {
+            await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
+        }
+    }
 });
 
-app.listen(PORT, () => {
-  console.log('Listening on port', PORT);
+// When the client is ready, run this code (only once)
+// We use 'c' for the event parameter to keep it separate from the already defined 'client'
+client.once(Events.ClientReady, c => {
+    console.log(`Ready! Logged in as ${c.user.tag}`);
 });
+
+// Log in to Discord with your client's token
+client.login(process.env.token);
