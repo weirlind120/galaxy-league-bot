@@ -2,8 +2,8 @@
   "ExpandedNodes": [
     "",
     "\\assets",
-    "\\examples"
+    "\\commands"
   ],
-  "SelectedNode": "\\package.json",
+  "SelectedNode": "\\commands\\lineup.js",
   "PreviewInSolutionExplorer": false
 }

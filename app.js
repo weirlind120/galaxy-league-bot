@@ -6,7 +6,8 @@ import { ALL_COMMANDS } from './commands/allcommands.js';
 
 // Create a new client instance
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-const db = await open({ filename: '../database/mushi_league.db', driver: sqlite3.Database });
+export const db = await open({ filename: '../database/mushi_league.db', driver: sqlite3.Database });
+export const currentSeason = (await db.get('SELECT * FROM season ORDER BY number DESC'));
 
 client.commands = new Collection();
 
@@ -28,7 +29,7 @@ client.on(Events.InteractionCreate, async interaction => {
     }
 
     try {
-        await command.execute(interaction, db);
+        await command.execute(interaction);
     } catch (error) {
         console.error(error);
         if (interaction.replied || interaction.deferred) {

@@ -1,10 +1,10 @@
 import { REST, Routes } from 'discord.js';
 import 'dotenv/config';
-import { ALL_COMMANDS } from './commands/allcommands.js';
+import ALL_COMMANDS from './commands/allcommands.js';
 
 const commands = [];
 
-for (const command of ALL_COMMANDS) {
+for (const command in ALL_COMMANDS) {
 	if ('data' in command && 'execute' in command) {
 		commands.push(command.data.toJSON());
 	}
