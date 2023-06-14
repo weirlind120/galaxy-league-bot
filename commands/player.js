@@ -1,6 +1,5 @@
 import { SlashCommandBuilder, PermissionFlagsBits, roleMention } from 'discord.js';
 import { confirmAction, sendFailure } from './util.js';
-import { db } from '../app.js';
 
 export const PLAYER_COMMAND = {
     data: new SlashCommandBuilder()
@@ -112,18 +111,16 @@ async function addPlayer(interaction) {
 
     const existingPlayer = await db.get('SELECT id FROM player WHERE discord_snowflake = ?', player.id);
 
-    let failures = []
+    let failures = [];
+    let prompts = [];
 
     if (existingPlayer.id) {
-        failures.push(`${player} is already in the pool! To adjust their rating, use /player rate`);
+        failures.push(`${player} is already in the pool! To adjust their rating, use /player rate.`);
     }
 
-    if (failures.length) {
-        sendFailure(interaction, failures);
+    if (sendFailure(interaction, failures)) {
         return;
     }
-
-    let prompts = [];
 
     const confirmLabel = 'Confirm Adding Player';
     const confirmMessage = stars
@@ -144,6 +141,7 @@ async function ratePlayer(interaction) {
     const existingPlayer = await db.get(existingPlayerQuery, player.id);
 
     let failures = [];
+    let prompts = [];
 
     if (!existingPlayer.id) {
         failures.push(`${player} is not in the pool; use /player add instead`);
@@ -151,16 +149,12 @@ async function ratePlayer(interaction) {
     if (existingPlayer.stars === stars) {
         failures.push(`${player} is already rated ${stars}`);
     }
-
-    if (failures) {
-        sendFailure(interaction, failures);
-        return;
-    }
-
-    let prompts = [];
-
     if (existingPlayer.stars && existingPlayer.stars !== stars) {
         prompts.push(`${player} is already rated ${existingPlayer.stars}. Do you want to change their rating to ${stars}?`);
+    }
+
+    if (sendFailure(interaction, failures)) {
+        return;
     }
 
     const confirmLabel = 'Confirm Rating Change';
@@ -178,12 +172,21 @@ async function assignPlayer(interaction) {
     const newRole = interaction.options.getRole('role');
 
     const existingPlayerQuery = 'SELECT player.id, player.stars, role.discord_snowflake AS roleSnowflake, role.name AS roleName, team.discord_snowflake AS teamSnowflake FROM player \
-                                 LEFT JOIN team ON team.id = player.team \
-                                 LEFT JOIN role ON role.id = player.role \
+                                 INNER JOIN team ON team.id = player.team \
+                                 INNER JOIN role ON role.id = player.role \
                                  WHERE player.discord_snowflake = ?';
     const existingPlayer = await db.get(existingPlayerQuery, player.id);
 
+    const existingLeaderQuery = 'SELECT player.id, player.name FROM player \
+                                     INNER JOIN team ON team.id = player.team \
+                                     INNER JOIN role ON role.id = player.role \
+                                     WHERE team.discord_snowflake = ? AND role.discord_snowflake = ?';
+    const existingLeader = (newRole.name === "Captain" || newRole.name === "Coach")
+        ? await db.get(existingLeaderQuery, newTeam.id, newRole.id)
+        : null;
+
     let failures = [];
+    let prompts = [];
 
     if (existingPlayer.teamSnowflake === newTeam.id && existingPlayer.roleSnowflake === newRole.id) {
         failures.push(`${player.user} is already assigned to ${newTeam} as a ${newRole}`);
@@ -191,23 +194,6 @@ async function assignPlayer(interaction) {
     if (existingPlayer.stars === null && newRole.name !== "Coach") {
         failures.push(`${player.user} needs a star rating before being made a ${newRole}. Use /player rate.`);
     }
-
-    if (failures) {
-        sendFailure(interaction, failures);
-        return;
-    }
-
-    let existingLeader;
-    if (newRole.name === "Captain" || newRole.name === "Coach") {
-        const existingLeaderQuery = 'SELECT player.id, player.name FROM player \
-                                     LEFT JOIN team ON team.id = player.team \
-                                     LEFT JOIN role ON role.id = player.role \
-                                     WHERE team.discord_snowflake = ? AND role.discord_snowflake = ?';
-        existingLeader = await db.get(existingLeaderQuery, newTeam.id, newRole.id);
-    }
-
-    let prompts = [];
-
     if (existingPlayer.teamSnowflake === newTeam.id && existingPlayer.roleSnowflake !== newRole.id) {
         prompts.push(`${player.user} is already on ${newTeam} but will be moved from ${roleMention(existingPlayer.roleSnowflake)} to ${newRole}.`);
     }
@@ -219,6 +205,10 @@ async function assignPlayer(interaction) {
     }
     if (existingLeader) {
         prompts.push(`${existingLeader.name} is already ${newTeam}'s ${newRole}. Teams shouldn't have two of these.`);
+    }
+
+    if (sendFailure(interaction, failures)) {
+        return;
     }
 
     const confirmLabel = 'Confirm Player Assignment';
@@ -244,26 +234,23 @@ async function dropPlayer(interaction) {
     const player = interaction.options.getMember('player');
 
     const existingPlayerQuery = 'SELECT player.id, role.discord_snowflake AS roleSnowflake, role.name AS roleName, team.discord_snowflake AS teamSnowflake FROM player \
-                                 LEFT JOIN team ON team.id = player.team \
-                                 LEFT JOIN role ON role.id = player.role \
+                                 INNER JOIN team ON team.id = player.team \
+                                 INNER JOIN role ON role.id = player.role \
                                  WHERE player.discord_snowflake = ?';
     const existingPlayer = await db.get(existingPlayerQuery, player.id);
 
     let failures = [];
+    let prompts = [];
 
     if (!existingPlayer.teamSnowflake) {
         failures.push(`${player.user} is already not on a team.`);
     }
-
-    if (failures) {
-        sendFailure(interaction, failures);
-        return;
-    }
-
-    let prompts = [];
-
     if (existingPlayer.roleName && existingPlayer.roleName !== "Player") {
         prompts.push(`${player.user} was ${roleMention(existingPlayer.teamSnowflake)}'s ${roleMention(existingPlayer.roleSnowflake)}. This team will be without a ${roleMention(existingPlayer.roleSnowflake)}.`);
+    }
+
+    if (sendFailure(interaction, failures)) {
+        return;
     }
 
     const confirmLabel = 'Confirm Player Dropping';
@@ -281,29 +268,26 @@ async function setPlayerInactive(interaction) {
     const player = interaction.options.getUser('player');
 
     const existingPlayerQuery = 'SELECT player.id, player.active, role.discord_snowflake AS roleSnowflake, role.name AS roleName, team.discord_snowflake AS teamSnowflake FROM player \
-                                 LEFT JOIN team ON team.id = player.team \
-                                 LEFT JOIN role ON role.id = player.role \
+                                 INNER JOIN team ON team.id = player.team \
+                                 INNER JOIN role ON role.id = player.role \
                                  WHERE player.discord_snowflake = ?';
     const existingPlayer = await db.get(existingPlayerQuery, player.id);
 
     let failures = [];
+    let prompts = [];
 
     if (!existingPlayer.active) {
         failures.push(`${player} is already inactive.`);
     }
-
-    if (failures) {
-        sendFailure(interaction, failures);
-        return;
-    }
-
-    let prompts = [];
-
     if (existingPlayer.teamSnowflake) {
         prompts.push(`${player} was on ${roleMention(existingPlayer.teamSnowflake)}. They will be dropped.`);
     }
     if (existingPlayer.roleName && existingPlayer.roleName !== "Player") {
         prompts.push(`${player} was ${roleMention(existingPlayer.teamSnowflake)}'s ${roleMention(existingPlayer.roleSnowflake)}. This team will be without a ${roleMention(existingPlayer.roleSnowflake)}.`);
+    }
+
+    if (sendFailure(interaction, failures)) {
+        return;
     }
 
     const confirmLabel = 'Confirm Player Deactivation';
@@ -324,17 +308,15 @@ async function setPlayerActive(interaction) {
     const existingPlayer = await db.get(existingPlayerQuery, player.id);
 
     let failures = [];
+    let prompts = [];
 
     if (existingPlayer.active) {
         failures.push(`${player} is already active.`);
     }
 
-    if (failures) {
-        sendFailure(interaction, failures);
+    if (sendFailure(interaction, failures)) {
         return;
     }
-
-    let prompts = [];
 
     const confirmLabel = 'Confirm Player Activation';
     const confirmMessage = `${player} set to active (can be on a team).`;

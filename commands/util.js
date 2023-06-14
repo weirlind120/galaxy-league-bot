@@ -18,7 +18,7 @@ export async function confirmAction(interaction, confirmLabel, prompts, confirmM
         const confirmation = await response.awaitMessageComponent({ filter: collectorFilter, time: 60000 });
 
         if (confirmation.customId === 'confirm') {
-            await confirmation.update({ components: [] });
+            await interaction.deleteReply();
             await interaction.followUp(`${prompt}\nAction confirmed: ${confirmMessage}`);
             return true;
         }
@@ -32,6 +32,24 @@ export async function confirmAction(interaction, confirmLabel, prompts, confirmM
     return false;
 }
 
-export async function sendFailure(interaction, failures) {
-    await interaction.reply({ content: `Action FAILED:\n${failures.join('\n')}`, ephemeral: true });
+export function sendFailure(interaction, failures) {
+    if (failures.constructor === Array) {
+        failures = failures.join('\n');
+    }
+
+    if (failures) {
+        interaction.reply({ content: `Action FAILED:\n${failures}`, ephemeral: true });
+        return true;
+    }
+
+    return false;
+}
+
+export function addModOverrideableFailure(userIsMod, failures, prompts, message) {
+    if (userIsMod) {
+        prompts.push(message);
+    }
+    else {
+        failures.push(message);
+    }
 }

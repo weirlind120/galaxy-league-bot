@@ -4,7 +4,7 @@ import ALL_COMMANDS from './commands/allcommands.js';
 
 const commands = [];
 
-for (const command in ALL_COMMANDS) {
+for (const command of ALL_COMMANDS) {
 	if ('data' in command && 'execute' in command) {
 		commands.push(command.data.toJSON());
 	}

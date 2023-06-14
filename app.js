@@ -1,13 +1,10 @@
 import { Client, Collection, Events, GatewayIntentBits } from 'discord.js';
 import 'dotenv/config';
-import sqlite3 from 'sqlite3';
-import { open } from 'sqlite';
-import { ALL_COMMANDS } from './commands/allcommands.js';
+import ALL_COMMANDS from './commands/allcommands.js';
+import { setGlobals } from './globals.js'
 
 // Create a new client instance
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-export const db = await open({ filename: '../database/mushi_league.db', driver: sqlite3.Database });
-export const currentSeason = (await db.get('SELECT * FROM season ORDER BY number DESC'));
 
 client.commands = new Collection();
 
@@ -20,6 +17,7 @@ for (const command of ALL_COMMANDS) {
 
 client.on(Events.InteractionCreate, async interaction => {
     if (!interaction.isChatInputCommand()) return;
+    if (interaction.member.roles.cache.has(process.env.noBotCommandsRoleId)) return;
 
     const command = interaction.client.commands.get(interaction.commandName);
 
@@ -44,6 +42,7 @@ client.on(Events.InteractionCreate, async interaction => {
 // We use 'c' for the event parameter to keep it separate from the already defined 'client'
 client.once(Events.ClientReady, c => {
     console.log(`Ready! Logged in as ${c.user.tag}`);
+    setGlobals(client);
 });
 
 // Log in to Discord with your client's token
