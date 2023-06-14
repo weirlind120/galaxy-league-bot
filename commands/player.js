@@ -1,11 +1,12 @@
 import { SlashCommandBuilder, PermissionFlagsBits, roleMention } from 'discord.js';
 import { confirmAction, sendFailure } from './util.js';
+import { db } from '../globals.js';
 
 export const PLAYER_COMMAND = {
     data: new SlashCommandBuilder()
         .setName('player')
         .setDescription("Changes a player's status")
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
         .addSubcommand(subcommand =>
             subcommand
                 .setName('add')
@@ -117,6 +118,8 @@ async function addPlayer(interaction) {
     if (existingPlayer.id) {
         failures.push(`${player} is already in the pool! To adjust their rating, use /player rate.`);
     }
+
+    console.log(failures);
 
     if (sendFailure(interaction, failures)) {
         return;
