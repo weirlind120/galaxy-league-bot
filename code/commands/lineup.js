@@ -215,11 +215,11 @@ async function submitLineup(interaction, userIsMod) {
             await db.run('DELETE FROM pairing WHERE matchup = ?', matchup.id);
 
             const otherTeam = matchup.left_team === matchup.teamId ? matchup.right_team : matchup.left_team;
-            const leaders = (await db.all('SELECT discord_snowflake FROM player WHERE (role = ? OR role = ?) AND team = ?', 2, 3, otherTeam)).map(leader => leader.discord_snowflake);
+            const otherTeamRole = (await db.all('SELECT discord_snowflake FROM team WHERE team = ?', otherTeam));
 
             await captainChannel.send({
-                content: leaders.map(leader => userMention(leader)).join(' ').concat(`, ${interaction.user} just wiped your lineup submission so you'll have to resubmit.`),
-                allowedMentions: { users: leaders }
+                content: `${roleMention(otherTeamRole)}, ${interaction.user} just wiped your lineup submission so you'll have to resubmit.`,
+                allowedMentions: { roles: [otherTeamRole] }
             });
         }
 

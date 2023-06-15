@@ -1,0 +1,75 @@
+type,name,tbl_name,rootpage,sql
+table,sqlite_sequence,sqlite_sequence,3,"CREATE TABLE sqlite_sequence(name,seq)"
+table,week,week,12,"CREATE TABLE ""week"" (
+	""id""	INTEGER NOT NULL,
+	""number""	INTEGER NOT NULL,
+	""season""	INTEGER NOT NULL,
+	PRIMARY KEY(""id"" AUTOINCREMENT)
+)"
+table,player,player,11,"CREATE TABLE ""player"" (
+	""id""	INTEGER NOT NULL DEFAULT 0,
+	""name""	TEXT NOT NULL,
+	""discord_snowflake""	TEXT NOT NULL,
+	""stars""	NUMERIC,
+	""active""	INTEGER NOT NULL DEFAULT 1,
+	""team""	INTEGER,
+	""role""	INTEGER,
+	FOREIGN KEY(""role"") REFERENCES ""role""(""id""),
+	FOREIGN KEY(""team"") REFERENCES ""team""(""id""),
+	PRIMARY KEY(""id"" AUTOINCREMENT)
+)"
+table,role,role,5,"CREATE TABLE ""role"" (
+	""id""	INTEGER NOT NULL,
+	""name""	TEXT NOT NULL,
+	""discord_snowflake""	TEXT NOT NULL,
+	PRIMARY KEY(""id"" AUTOINCREMENT)
+)"
+table,team,team,4,"CREATE TABLE ""team"" (
+	""id""	INTEGER NOT NULL,
+	""name""	TEXT NOT NULL,
+	""discord_snowflake""	TEXT NOT NULL,
+	""emoji""	TEXT NOT NULL,
+	PRIMARY KEY(""id"" AUTOINCREMENT)
+)"
+table,pairing,pairing,7,"CREATE TABLE ""pairing"" (
+	""id""	INTEGER NOT NULL,
+	""matchup""	INTEGER NOT NULL,
+	""slot""	INTEGER NOT NULL,
+	""left_player""	INTEGER,
+	""right_player""	INTEGER,
+	""game1""	TEXT,
+	""game2""	TEXT,
+	""game3""	TEXT,
+	""game4""	TEXT,
+	""game5""	TEXT,
+	""winner""	INTEGER,
+	""dead""	INTEGER,
+	FOREIGN KEY(""right_player"") REFERENCES ""player""(""id""),
+	FOREIGN KEY(""matchup"") REFERENCES ""matchup""(""id""),
+	FOREIGN KEY(""left_player"") REFERENCES ""player""(""id""),
+	PRIMARY KEY(""id"" AUTOINCREMENT)
+)"
+table,season,season,8,"CREATE TABLE ""season"" (
+	""number""	INTEGER NOT NULL DEFAULT 13,
+	""current_week""	INTEGER,
+	""regular_weeks""	INTEGER,
+	""playoff_size""	INTEGER,
+	PRIMARY KEY(""number"" AUTOINCREMENT)
+)"
+table,matchup,matchup,9,"CREATE TABLE ""matchup"" (
+	""id""	INTEGER NOT NULL,
+	""room""	TEXT NOT NULL,
+	""week""	INTEGER NOT NULL,
+	""left_team""	INTEGER NOT NULL,
+	""right_team""	INTEGER NOT NULL,
+	""rigged_count""	INTEGER,
+	""slots""	INTEGER,
+	""left_submitter""	INTEGER,
+	""right_submitter""	INTEGER,
+	FOREIGN KEY(""left_submitter"") REFERENCES ""player""(""id""),
+	FOREIGN KEY(""right_submitter"") REFERENCES ""player""(""id""),
+	FOREIGN KEY(""week"") REFERENCES ""week""(""id""),
+	FOREIGN KEY(""left_team"") REFERENCES ""team""(""id""),
+	FOREIGN KEY(""right_team"") REFERENCES ""team""(""id""),
+	PRIMARY KEY(""id"" AUTOINCREMENT)
+)"

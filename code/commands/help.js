@@ -42,6 +42,16 @@ export const HELP_COMMAND = {
                 `\n        ${bold('set_active')}   mark a player active (can be on a team)`;
         }
 
+        if (interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+            helpText +=
+                '\n' +
+                `\n${italic('admin only')}` +
+                `\n    ${bold('/season')}   powerful and difficult-to-reverse commands to advance the season` +
+                `\n        ${bold('new')}   start a new season` +
+                `\n        ${bold('next_week')}   start the next week: make new match rooms, post predictions, make extension rooms, update standings` +
+                `\n        ${bold('setup_playoff')}   calculate the next round of playoff and ping the captains for lineups`;
+        }
+
         await interaction.reply({ content: helpText, ephemeral: true });
     }
 }

@@ -1,9 +1,8 @@
 {
   "ExpandedNodes": [
     "",
-    "\\assets",
     "\\commands"
   ],
-  "SelectedNode": "\\commands\\lineup.js",
+  "SelectedNode": "\\commands\\season.js",
   "PreviewInSolutionExplorer": false
 }
