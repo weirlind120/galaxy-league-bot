@@ -1,4 +1,6 @@
-export const SEASON_COMMAND = {
+import { SlashCommandBuilder } from 'discord.js';
+
+export const DRAFT_COMMAND = {
     data: new SlashCommandBuilder()
         .setName('draft')
         .setDescription('commands for drafting players')

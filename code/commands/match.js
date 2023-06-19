@@ -1,11 +1,40 @@
 import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention, spoiler } from 'discord.js';
 import { confirmAction, sendFailure, addModOverrideableFailure } from './util.js';
-import { db, currentSeason, matchReportChannel } from '../globals.js';
+import { db, currentSeason, channels, mushiLeagueGuild } from '../globals.js';
 
 export const MATCH_COMMAND = {
     data: new SlashCommandBuilder()
         .setName('match')
         .setDescription('updates the status of a pairing')
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('start')
+                .setDescription('when players have begun their bo3 (locks them out of live-matches until /match report)')
+                .addUserOption(option => 
+                    option
+                        .setName('player')
+                        .setDescription('name of either player in the bo3, defaults to yourself'))
+                .addUserOption(option =>
+                    option
+                        .setName('opponent')
+                        .setDescription('name of the other player in the bo3, can default in mushi league opps')))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('link')
+                .setDescription('links a game in live-matches')
+                .addStringOption(option =>
+                    option
+                        .setName('game_link')
+                        .setDescription('url of game to link')
+                        .setRequired(true))
+                .addNumberOption(option =>
+                    option
+                        .setName('number')
+                        .setDescription('which game in the set this is'))
+                .addBooleanOption(option =>
+                    option
+                        .setName('ping')
+                        .setDescription('whether to ping @spectator')))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('report')
@@ -72,6 +101,12 @@ export const MATCH_COMMAND = {
         const userIsMod = interaction.member.permissions.has(PermissionFlagsBits.ManageChannels);
 
         switch (interaction.options.getSubcommand()) {
+            case 'start':
+                await startMatch(interaction);
+                break;
+            case 'link':
+                await linkMatch(interaction);
+                break;
             case 'report':
                 await reportMatch(interaction, userIsMod);
                 break;
@@ -82,6 +117,63 @@ export const MATCH_COMMAND = {
                 await markDeadGame(interaction, userIsMod);
                 break;
         }
+    }
+}
+
+async function startMatch(interaction) {
+    let failures = [], prompts = [];
+
+    const currentlyPlayingRole = process.env.currentlyPlayingRoleId;
+    const player = interaction.options.getMember('player') || interaction.member;
+    const opponent = interaction.options.getMember('opponent') || await getOpponent(player.user.id);
+
+    if (!opponent) {
+        failures.push("Opponent not found. This doesn't seem to be a mushi league match? use the opponent option to specify.");
+    }
+
+    if (sendFailure(failures)) return;
+
+    const confirmLabel = 'Confirm Start Match';
+    const confirmMessage = `${player.user} and ${userMention(opponent)} given the currently playing role.`;
+    const cancelMessage = 'Nobody given the currently playing role.';
+
+    if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage)) {
+        await player.roles.add(currentlyPlayingRole);
+        await opponent.roles.add(currentlyPlayingRole);
+    }
+}
+
+async function linkMatch(interaction) {
+    let failures = [], prompts = [];
+
+    const gameLink = interaction.options.getString('game_link');
+    const ping = interaction.options.getBoolean('ping');
+    const number = interaction.options.getNumber('number');
+    const player = interaction.member;
+    const opponent = getOpponent(player.user.id);
+
+    if (!player.roles.cache.has(process.env.currentlyPlayingRoleId)) {
+        failures.push("You're not barred from #live-matches! Link it yourself, you bum.");
+    }
+
+    if (sendFailure(interaction, failures)) return;
+
+    const confirmLabel = 'Confirm Link Game';
+    const confirmMessage = 'Game linked in #live-matches';
+    const cancelMessage = 'Game not linked';
+
+    if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage)) {
+        const linkMessage = gameLink.concat(
+            ` ${player.user} vs ${userMention(opponent)}`,
+            number ? ` game ${number}` : '',
+            ping ? ` ${roleMention(process.env.spectatorRoleId)}` : ''
+        );
+
+        const liveMatchesChannel = await channels.fetch(process.env.liveMatchesChannelId);
+        await liveMatchesChannel.send({
+            content: linkMessage,
+            allowedMentions: { parse: ['roles'] }
+        });
     }
 }
 
@@ -142,10 +234,21 @@ async function reportMatch(interaction, userIsMod) {
         const matchReportHeader = `${leftPlayerText} ${winnerText} ${rightPlayerText}`;
         const matchReportMessage = matchReportHeader.concat('\n', games.join('\n'));
 
+        const matchReportChannel = await channels.fetch(process.env.matchReportChannelId);
         await matchReportChannel.send({
             content: matchReportMessage,
             allowedMentions: { parse: [] }
         });
+
+        const currentlyPlayingRole = process.env.currentlyPlayingRoleId;
+
+        const player1 = await mushiLeagueGuild.members.fetch(leftPlayer.discord_snowflake);
+        const player2 = await mushiLeagueGuild.members.fetch(rightPlayer.discord_snowflake);
+
+        await player1.roles.remove(currentlyPlayingRole);
+        await player2.roles.remove(currentlyPlayingRole);
+
+        await notifyOwnersIfAllMatchesDone();
     }
 }
 
@@ -197,10 +300,13 @@ async function awardActWin(interaction, userIsMod) {
         const winnerText = leftPlayer === winnerData ? '>' : '<';
         const matchReportMessage = `${leftPlayerText} ${winnerText} ${rightPlayerText} on activity`;
 
+        const matchReportChannel = await channels.fetch(process.env.matchReportChannelId);
         await matchReportChannel.send({
             content: matchReportMessage,
             allowedMentions: { parse: [] }
         });
+
+        await notifyOwnersIfAllMatchesDone();
     }
 }
 
@@ -249,9 +355,51 @@ async function markDeadGame(interaction, userIsMod) {
         const rightPlayerText = `${userMention(rightPlayer.discord_snowflake)} (${roleMention(rightPlayer.teamSnowflake)})`;
         const matchReportMessage = `${leftPlayerText} vs ${rightPlayerText} marked dead`;
 
+        const matchReportChannel = await channels.fetch(process.env.matchReportChannelId);
         await matchReportChannel.send({
             content: matchReportMessage,
             allowedMentions: { parse: [] }
         });
+
+        await notifyOwnersIfAllMatchesDone();
+    }
+}
+
+async function getOpponent(playerSnowflake) {
+    const opponentQuery = 'SELECT pairing.id, player.discord_snowflake FROM pairing \
+                               INNER JOIN player ON player.id = pairing.left_player \
+                               WHERE pairing.dead IS NULL AND pairing.winner IS NULL \
+                                     AND pairing.right_player = (SELECT id FROM player WHERE discord_snowflake = ?) \
+                               UNION \
+                               SELECT pairing.id, player.discord_snowflake FROM pairing \
+                               INNER JOIN player ON player.id = pairing.right_player \
+                               WHERE pairing.dead IS NULL AND pairing.winner IS NULL \
+                                    AND pairing.left_player = (SELECT id FROM player WHERE discord_snowflake = ?) \
+                               ORDER BY pairing.id ASC LIMIT 1';
+
+    return (await db.get(opponentQuery, playerSnowflake, playerSnowflake)).discord_snowflake;
+}
+
+export async function getOpenPairings(asOfWeek) {
+    const openPairingsQuery =
+        'SELECT leftPlayer.discord_snowflake AS leftPlayerSnowflake, leftTeam.discord_snowflake AS leftTeamSnowflake, \
+                rightPlayer.discord_snowflake AS rightPlayerSnowflake, rightTeam.discord_snowflake AS rightTeamSnowflake, pairing.matchup FROM pairing \
+         INNER JOIN player AS leftPlayer ON leftPlayer.id = pairing.left_player \
+         INNER JOIN player AS rightPlayer ON rightPlayer.id = pairing.right_player \
+         INNER JOIN team AS leftTeam ON leftTeam.id = leftPlayer.team \
+         INNER JOIN team AS rightTeam ON rightTeam.id = rightPlayer.team \
+         INNER JOIN matchup ON matchup.id = pairing.matchup \
+         INNER JOIN week ON week.id = matchup.week \
+         WHERE pairing.winner IS NULL AND pairing.dead IS NULL AND week.number = ? AND week.season = ?';
+    return await db.all(openPairingsQuery, asOfWeek, currentSeason.number);
+}
+
+async function notifyOwnersIfAllMatchesDone() {
+    if ((await getOpenPairings(currentSeason.current_week)).length === 0) {
+        const captainChannel = await channels.fetch(process.env.captainChannelId);
+        await captainChannel.send({
+            content: `${roleMention(process.env.ownerRoleId)} all matches are in -- run /season calculate_standings when you've confirmed.`,
+            allowedMentions: { parse: ['roles'] }
+        })
     }
 }

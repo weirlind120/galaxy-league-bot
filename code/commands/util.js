@@ -1,8 +1,13 @@
 import { ButtonBuilder, ActionRowBuilder, ButtonStyle } from 'discord.js';
 
-export async function confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage) {
+export async function confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage, ephemeral, deferred) {
     if (!prompts || prompts.length === 0) {
-        await interaction.reply(confirmMessage);
+        if (deferred) {
+            await interaction.editReply(confirmMessage);
+        }
+        else {
+            await interaction.reply(confirmMessage);
+        }
         return true;
     }
 
@@ -10,7 +15,10 @@ export async function confirmAction(interaction, confirmLabel, prompts, confirmM
     const cancelButton = new ButtonBuilder().setCustomId('cancel').setLabel('Cancel').setStyle(ButtonStyle.Secondary);
     const confirmButton = new ButtonBuilder().setCustomId('confirm').setLabel(confirmLabel).setStyle(ButtonStyle.Danger);
     const row = new ActionRowBuilder().addComponents(cancelButton).addComponents(confirmButton);
-    const response = await interaction.reply({ content: prompt, components: [row], ephemeral: true });
+
+    const response = deferred
+        ? await interaction.editReply({ content: prompt, components: [row] })
+        : await interaction.reply({ content: prompt, components: [row], ephemeral: ephemeral });
 
     const collectorFilter = i => i.user.id === interaction.user.id;
 
@@ -18,8 +26,7 @@ export async function confirmAction(interaction, confirmLabel, prompts, confirmM
         const confirmation = await response.awaitMessageComponent({ filter: collectorFilter, time: 60000 });
 
         if (confirmation.customId === 'confirm') {
-            await interaction.deleteReply();
-            await interaction.followUp(`${prompt}\nAction confirmed: ${confirmMessage}`);
+            await confirmation.update({ content: confirmMessage, components: [] });
             return true;
         }
         else {
@@ -32,13 +39,19 @@ export async function confirmAction(interaction, confirmLabel, prompts, confirmM
     return false;
 }
 
-export function sendFailure(interaction, failures) {
+export function sendFailure(interaction, failures, deferred) {
     if (failures.constructor === Array) {
         failures = failures.join('\n');
     }
 
     if (failures) {
-        interaction.reply({ content: `Action FAILED:\n${failures}`, ephemeral: true });
+        if (deferred) {
+
+            interaction.editReply({ content: `Action FAILED:\n${failures}`, ephemeral: true });
+        }
+        else {
+            interaction.reply({ content: `Action FAILED:\n${failures}`, ephemeral: true });
+        }
         return true;
     }
 

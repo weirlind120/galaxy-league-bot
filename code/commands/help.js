@@ -12,6 +12,8 @@ export const HELP_COMMAND = {
             '\n' +
             `\n${italic('public')}` +
             `\n    ${bold('/match')}   commands to set the outcome of a match` +
+            `\n        ${bold('start')}   gives both players the role which bars them from #live-matches` +
+            `\n        ${bold('link')}   links a game in #live-matches` +
             `\n        ${bold('report')}   report the result of a played set` +
             `\n    ${bold('/help')}   ...this`;
 
@@ -48,8 +50,8 @@ export const HELP_COMMAND = {
                 `\n${italic('admin only')}` +
                 `\n    ${bold('/season')}   powerful and difficult-to-reverse commands to advance the season` +
                 `\n        ${bold('new')}   start a new season` +
-                `\n        ${bold('next_week')}   start the next week: make new match rooms, post predictions, make extension rooms, update standings` +
-                `\n        ${bold('setup_playoff')}   calculate the next round of playoff and ping the captains for lineups`;
+                `\n        ${bold('next_week')}   start the next week: make new match rooms, post predictions, make extension rooms` +
+                `\n        ${bold('calculate_standings')}   calculate the player and team standings after a week finishes, set up the next playoff round if applicable`;
         }
 
         await interaction.reply({ content: helpText, ephemeral: true });
