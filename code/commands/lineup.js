@@ -281,12 +281,12 @@ async function substitutePlayer(interaction, userIsMod) {
     const extension = interaction.options.getBoolean('extension');
     const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
 
-    const matchupQuery = 'SELECT matchup.id, matchup.slots, matchup.left_team, matchup.right_team, team.id AS teamId, team.discord_snowflake AS teamSnowflake FROM matchup \
+    const matchupQuery = 'SELECT matchup.id, matchup.slots, matchup.left_team, matchup.right_team, matchup.room, matchup.channel_message, team.id AS teamId, team.discord_snowflake AS teamSnowflake FROM matchup \
          INNER JOIN week on matchup.week = week.id \
          INNER JOIN team on matchup.left_team = team.id \
          WHERE week.season = ? AND week.number = ? AND team.id = (SELECT team FROM player WHERE player.discord_snowflake = ?) \
          UNION \
-         SELECT matchup.id, matchup.slots, matchup.left_team, matchup.right_team, team.id AS teamId, team.discord_snowflake AS teamSnowflake FROM matchup \
+         SELECT matchup.id, matchup.slots, matchup.left_team, matchup.right_team, matchup.room, matchup.channel_message, team.id AS teamId, team.discord_snowflake AS teamSnowflake FROM matchup \
          INNER JOIN week on matchup.week = week.id \
          INNER JOIN team on matchup.right_team = team.id \
          WHERE week.season = ? AND week.number = ? AND team.id = (SELECT team FROM player WHERE player.discord_snowflake = ?)';
@@ -294,7 +294,7 @@ async function substitutePlayer(interaction, userIsMod) {
 
     const side = (matchup.left_team === matchup.teamId) ? 'left' : 'right';
 
-    const playersQuery = `SELECT player.id, player.stars, player.discord_snowflake, pairing.slot, team.discord_snowflake AS teamSnowflake, role.name AS roleName FROM player \
+    const playersQuery = `SELECT player.id, player.stars, player.discord_snowflake, pairing.slot, pairing.predictions_message, team.discord_snowflake AS teamSnowflake, role.name AS roleName FROM player \
                           LEFT JOIN pairing on pairing.${side}_player = player.id AND pairing.matchup = ? \
                           INNER JOIN team ON team.id = player.team \
                           INNER JOIN role ON role.id = player.role \
@@ -337,5 +337,15 @@ async function substitutePlayer(interaction, userIsMod) {
 
     if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage)) {
         await db.run(`UPDATE pairing SET ${side}_player = ? WHERE matchup = ? AND slot = ?`, newPlayerData.id, matchup.id, replacedPlayerData.slot);
+
+        const matchRoom = await channels.fetch(eval(`process.env.matchChannel${matchup.room}Id`));
+        const channelMessage = await matchRoom.messages.fetch({ message: matchup.channel_message, force: true });
+        const newChannelContent = channelMessage.content.replace(replacedPlayerData.discord_snowflake, newPlayerData.discord_snowflake);
+        await channelMessage.edit(newChannelContent);
+
+        const predictionsRoom = await channels.fetch(process.env.predictionsChannelId);
+        const predictionsMessage = await predictionsRoom.messages.fetch({ message: replacedPlayerData.predictions_message, force: true });
+        const newPredictionContent = predictionsMessage.content.replace(replacedPlayerData.discord_snowflake, newPlayerData.discord_snowflake);
+        await predictionsMessage.edit(newPredictionContent);
     }
 }

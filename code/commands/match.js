@@ -95,7 +95,20 @@ export const MATCH_COMMAND = {
                 .addBooleanOption(option =>
                     option
                         .setName('extension')
-                        .setDescription('Whether this is an extension from last week'))),
+                        .setDescription('Whether this is an extension from last week')))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('undo')
+                .setDescription('undoes a match decision')
+                .addUserOption(option =>
+                    option
+                        .setName('player')
+                        .setDescription('one of the players in the pairing to undo')
+                        .setRequired(true))
+                .addBooleanOption(option =>
+                    option
+                        .setName('extension')
+                        .setDescription('whether this is an extension from last week'))),
 
     async execute(interaction) {
         const userIsMod = interaction.member.permissions.has(PermissionFlagsBits.ManageChannels);
@@ -115,6 +128,9 @@ export const MATCH_COMMAND = {
                 break;
             case 'dead':
                 await markDeadGame(interaction, userIsMod);
+                break;
+            case 'undo':
+                await undoReport(interaction, userIsMod);
                 break;
         }
     }
@@ -189,7 +205,7 @@ async function reportMatch(interaction, userIsMod) {
     const extension = interaction.options.getBoolean('extension');
     const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
 
-    const pairingQuery = 'SELECT pairing.id, pairing.slot, pairing.left_player, pairing.right_player, pairing.winner, pairing.dead FROM pairing \
+    const pairingQuery = 'SELECT pairing.id, pairing.slot, pairing.left_player, pairing.right_player, pairing.winner, pairing.dead, pairing.predictions_message, matchup.predictions_message AS matchupPrediction FROM pairing \
                           INNER JOIN matchup ON pairing.matchup = matchup.id \
                           INNER JOIN week ON matchup.week = week.id \
                           WHERE week.season = ? AND week.number = ? AND \
@@ -211,7 +227,7 @@ async function reportMatch(interaction, userIsMod) {
     let prompts = [];
 
     if (pairing.winner || pairing.dead) {
-        addModOverrideableFailure(userIsMod, failures, prompts, `${winner} vs ${userMention(loserData.discord_snowflake)} already has a result reported.`);
+        failures.push(`${winner} vs ${userMention(loserData.discord_snowflake)} already has a result reported. Use /match undo first.`);
     }
     if (games.length === 2) {
         prompts.push("Only 2 games reported. If this series wasn't a 2-0, make sure to use the optional parameters for the other games.");
@@ -249,6 +265,7 @@ async function reportMatch(interaction, userIsMod) {
         await player2.roles.remove(currentlyPlayingRole);
 
         await notifyOwnersIfAllMatchesDone();
+        await updatePredictions(pairing, false, leftPlayer === winnerData);
     }
 }
 
@@ -261,7 +278,7 @@ async function awardActWin(interaction, userIsMod) {
     const extension = interaction.options.getBoolean('extension');
     const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
 
-    const pairingQuery = 'SELECT pairing.id, pairing.slot, pairing.left_player, pairing.right_player, pairing.winner, pairing.dead FROM pairing \
+    const pairingQuery = 'SELECT pairing.id, pairing.slot, pairing.left_player, pairing.right_player, pairing.winner, pairing.dead, pairing.predictions_message, matchup.predictions_message AS matchupPrediction FROM pairing \
                           INNER JOIN matchup ON pairing.matchup = matchup.id \
                           INNER JOIN week ON matchup.week = week.id \
                           WHERE week.season = ? AND week.number = ? AND \
@@ -283,7 +300,7 @@ async function awardActWin(interaction, userIsMod) {
     let prompts = [];
 
     if (pairing.winner || pairing.dead) {
-        addModOverrideableFailure(userIsMod, failures, prompts, `${winner} vs ${userMention(loserData.discord_snowflake)} already has a result reported.`);
+        failures.push(`${winner} vs ${userMention(loserData.discord_snowflake)} already has a result reported. Use /match undo first.`);
     }
 
     if (sendFailure(interaction, failures)) return;
@@ -307,6 +324,7 @@ async function awardActWin(interaction, userIsMod) {
         });
 
         await notifyOwnersIfAllMatchesDone();
+        await updatePredictions(pairing, false, leftPlayer === winnerData);
     }
 }
 
@@ -319,7 +337,7 @@ async function markDeadGame(interaction, userIsMod) {
     const extension = interaction.options.getBoolean('extension');
     const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
 
-    const pairingQuery = 'SELECT pairing.id, pairing.slot, pairing.left_player, pairing.right_player, pairing.winner, pairing.dead FROM pairing \
+    const pairingQuery = 'SELECT pairing.id, pairing.slot, pairing.left_player, pairing.right_player, pairing.winner, pairing.dead, pairing.predictions_message, matchup.predictions_message AS matchupPrediction FROM pairing \
                           INNER JOIN matchup ON pairing.matchup = matchup.id \
                           INNER JOIN week ON matchup.week = week.id \
                           WHERE week.season = ? AND week.number = ? AND \
@@ -339,7 +357,7 @@ async function markDeadGame(interaction, userIsMod) {
     let prompts = [];
 
     if (pairing.winner || pairing.dead) {
-        addModOverrideableFailure(userIsMod, failures, prompts, `${userMention(leftPlayer.discord_snowflake)} vs ${userMention(rightPlayer.discord_snowflake)} already has a result reported.`);
+        failures.push(`${userMention(leftPlayer.discord_snowflake)} vs ${userMention(rightPlayer.discord_snowflake)} already has a result reported. Use /match undo first.`);
     }
 
     if (sendFailure(interaction, failures)) return;
@@ -362,6 +380,52 @@ async function markDeadGame(interaction, userIsMod) {
         });
 
         await notifyOwnersIfAllMatchesDone();
+        await updatePredictions(pairing, true);
+    }
+}
+
+async function undoReport(interaction, userIsMod) {
+    if (!userIsMod) {
+        sendFailure(interaction, "Only mods can use this command");
+    }
+
+    const player = interaction.options.getUser('player');
+    const extension = interaction.options.getBoolean('extension');
+    const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
+
+    const pairingQuery = 'SELECT pairing.id, pairing.slot, pairing.left_player, pairing.right_player, pairing.winner, pairing.dead, pairing.predictions_message, matchup.predictions_message AS matchupPrediction FROM pairing \
+                          INNER JOIN matchup ON pairing.matchup = matchup.id \
+                          INNER JOIN week ON matchup.week = week.id \
+                          WHERE week.season = ? AND week.number = ? AND \
+                            (pairing.left_player = (SELECT id FROM player WHERE discord_snowflake = ?) OR \
+                             pairing.right_player = (SELECT id FROM player WHERE discord_snowflake = ?))'
+    const pairing = await db.get(pairingQuery, currentSeason.number, week, player.id, player.id);
+
+    const playersQuery = 'SELECT player.id, player.discord_snowflake, team.discord_snowflake AS teamSnowflake FROM player \
+                          INNER JOIN team ON player.team = team.id \
+                          WHERE (player.id = ? OR player.id = ?)';
+    const players = await db.all(playersQuery, pairing.left_player, pairing.right_player);
+
+    const leftPlayer = players.find(p => p.id === pairing.left_player);
+    const rightPlayer = players.find(p => p.id === pairing.right_player);
+
+    let failures = [];
+    let prompts = [];
+
+    if (!pairing.winner && !pairing.dead) {
+        failures.push('Nothing to undo');
+    }
+
+    if (sendFailure(interaction, failures)) return;
+
+    const confirmLabel = 'Confirm undo report';
+    const confirmMessage = `${userMention(leftPlayer.discord_snowflake)} vs ${userMention(rightPlayer.discord_snowflake)} result undone.`;
+    const cancelMessage = 'Result not undone.';
+
+    if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage)) {
+        await db.run('UPDATE pairing SET winner = NULL, dead = NULL WHERE id = ?', pairing.id);
+
+        await resetPredictions(pairing, leftPlayer.discord_snowflake, rightPlayer.discord_snowflake);
     }
 }
 
@@ -401,5 +465,46 @@ async function notifyOwnersIfAllMatchesDone() {
             content: `${roleMention(process.env.ownerRoleId)} all matches are in -- run /season calculate_standings when you've confirmed.`,
             allowedMentions: { parse: ['roles'] }
         })
+    }
+}
+
+async function updatePredictions(pairing, dead, winnerOnLeft) {
+    const predictionsRoom = await channels.fetch(process.env.predictionsChannelId);
+    const predictionsMessage = await predictionsRoom.messages.fetch({ message: pairing.predictions_message, force: true });
+
+    if (dead) {
+        const newPredictionContent = predictionsMessage.content.replace('vs', '\u{1f480}');
+        await predictionsMessage.edit(newPredictionContent);
+    }
+    else {
+        const newPredictionContent = winnerOnLeft
+            ? `\u{1F1FC} ${predictionsMessage.content} \u{1F1F1}`
+            : `\u{1F1F1} ${predictionsMessage.content} \u{1F1FC}`;
+        await predictionsMessage.edit(newPredictionContent);
+
+        const matchupPredictionsMessage = await predictionsRoom.messages.fetch({ message: pairing.matchupPrediction, force: true });
+        const score = matchupPredictionsMessage.content.substring(matchupPredictionsMessage.content.length - 3, matchupPredictionsMessage.content.length);
+        const newScore = winnerOnLeft
+            ? ''.concat(parseInt(score.charAt(0)) + 1, score.substring(1))
+            : score.substring(0, 2).concat(parseInt(score.charAt(2)) + 1);
+        const newMatchupPredictionsContent = matchupPredictionsMessage.content.substring(0, matchupPredictionsMessage.content.length - 3).concat(newScore);
+        await matchupPredictionsMessage.edit(newMatchupPredictionsContent);
+    }
+}
+
+async function resetPredictions(pairing, leftPlayerSnowflake, rightPlayerSnowflake) {
+    const predictionsRoom = await channels.fetch(process.env.predictionsChannelId);
+    const predictionsMessage = await predictionsRoom.messages.fetch({ message: pairing.predictions_message, force: true });
+    const newPredictionsContent = `${userMention(leftPlayerSnowflake)} vs ${userMention(rightPlayerSnowflake)}`;
+    await predictionsMessage.edit(newPredictionsContent);
+
+    if (!pairing.dead) {
+        const matchupPredictionsMessage = await predictionsRoom.messages.fetch({ message: pairing.matchupPrediction, force: true });
+        const score = matchupPredictionsMessage.content.substring(matchupPredictionsMessage.content.length - 3, matchupPredictionsMessage.content.length);
+        const newScore = (pairing.winner === pairing.left_player)
+            ? ''.concat(parseInt(score.charAt(0)) - 1, score.substring(1))
+            : score.substring(0, 2).concat(parseInt(score.charAt(2)) - 1);
+        const newMatchupPredictionsContent = matchupPredictionsMessage.content.substring(0, matchupPredictionsMessage.content.length - 3).concat(newScore);
+        await matchupPredictionsMessage.edit(newMatchupPredictionsContent);
     }
 }

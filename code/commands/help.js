@@ -35,6 +35,7 @@ export const HELP_COMMAND = {
                 `\n    ${bold('/match')}   commands to set the outcome of a match` +
                 `\n        ${bold('act')}   award an activity win` +
                 `\n        ${bold('dead')}   mark a match dead` +
+                `\n        ${bold('undo')}   undo a match report` +
                 `\n    ${bold('/player')}   commands to manage the player pool` +
                 `\n        ${bold('add')}   add a player to the player pool` +
                 `\n        ${bold('rate')}   give a player a star rating` +

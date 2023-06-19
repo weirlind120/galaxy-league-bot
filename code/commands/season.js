@@ -398,7 +398,7 @@ async function autoGenerateLineup(matchup, interaction) {
 }
 
 export async function getNextPairings() {
-    const pairingQuery = 'SELECT pairing.matchup, pairing.slot, matchup.room, leftPlayer.discord_snowflake AS leftPlayerSnowflake, leftTeam.discord_snowflake AS leftTeamSnowflake, leftTeam.emoji AS leftEmoji, \
+    const pairingQuery = 'SELECT pairing.id, pairing.matchup, pairing.slot, matchup.room, leftPlayer.discord_snowflake AS leftPlayerSnowflake, leftTeam.discord_snowflake AS leftTeamSnowflake, leftTeam.emoji AS leftEmoji, \
                           rightPlayer.discord_snowflake AS rightPlayerSnowflake, rightTeam.discord_snowflake AS rightTeamSnowflake, rightTeam.emoji AS rightEmoji FROM pairing \
                           INNER JOIN matchup ON pairing.matchup = matchup.id \
                           INNER JOIN week ON matchup.week = week.id \
@@ -479,10 +479,13 @@ async function postPairingMessage(pairingSet, matchRoom) {
         rules
     );
 
-    await matchRoom.send({
+    const pairingPost = await matchRoom.send({
         content: pairingMessage,
         allowedMentions: { parse: ['roles', 'users'] }
     });
+
+    await pairingPost.pin();
+    await db.run('UPDATE matchup SET channel_message = ? WHERE id = ?', pairingPost.id, pairingSet[0].matchup);
 }
 
 const rules = 'A few rules to remember:\n' +
@@ -504,19 +507,26 @@ export async function postPredictions(groupedPairings) {
 
 async function postPredictionsForMatchup(predictionsChannel, pairingSet) {
     const headerMessage = `${pairingSet[0].leftEmoji} ${roleMention(pairingSet[0].leftTeamSnowflake)} vs ${roleMention(pairingSet[0].rightTeamSnowflake)} ${pairingSet[0].rightEmoji}\n \
-                           Current score: 0-0`;
-    sendPredictionMessage(predictionsChannel, headerMessage, pairingSet[0].leftEmoji, pairingSet[0].rightEmoji);
+                                           Current score: 0-0`;
+    await sendPredictionMessage(predictionsChannel, headerMessage, pairingSet[0].leftEmoji, pairingSet[0].rightEmoji, pairingSet[0].matchup);
 
     for (const pairing of pairingSet) {
-        sendPredictionMessage(predictionsChannel, `${userMention(pairing.leftPlayerSnowflake)} vs ${userMention(pairing.rightPlayerSnowflake)}`, pairing.leftEmoji, pairing.rightEmoji);
+        const pairingMessage = `${userMention(pairing.leftPlayerSnowflake)} vs ${userMention(pairing.rightPlayerSnowflake)}`;
+        await sendPredictionMessage(predictionsChannel, pairingMessage, pairing.leftEmoji, pairing.rightEmoji, null, pairing.id);
     }
 }
 
-async function sendPredictionMessage(predictionsChannel, content, leftEmoji, rightEmoji) {
+async function sendPredictionMessage(predictionsChannel, content, leftEmoji, rightEmoji, matchupId, pairingId) {
     const message = await predictionsChannel.send({
         content: content,
         allowedMentions: { parse: [] }
-    })
+    });
     await message.react(leftEmoji);
     await message.react(rightEmoji);
+    if (matchupId) {
+        await db.run('UPDATE matchup SET predictions_message = ? WHERE id = ?', message.id, matchupId);
+    }
+    if (pairingId) {
+        await db.run('UPDATE pairing SET predictions_message = ? WHERE id = ?', message.id, pairingId);
+    }
 }
