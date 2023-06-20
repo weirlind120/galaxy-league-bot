@@ -115,11 +115,9 @@ async function addPlayer(interaction) {
     let failures = [];
     let prompts = [];
 
-    if (existingPlayer.id) {
+    if (existingPlayer) {
         failures.push(`${player} is already in the pool! To adjust their rating, use /player rate.`);
     }
-
-    console.log(failures);
 
     if (sendFailure(interaction, failures)) {
         return;
@@ -175,8 +173,8 @@ async function assignPlayer(interaction) {
     const newRole = interaction.options.getRole('role');
 
     const existingPlayerQuery = 'SELECT player.id, player.stars, role.discord_snowflake AS roleSnowflake, role.name AS roleName, team.discord_snowflake AS teamSnowflake FROM player \
-                                 INNER JOIN team ON team.id = player.team \
-                                 INNER JOIN role ON role.id = player.role \
+                                 LEFT JOIN team ON team.id = player.team \
+                                 LEFT JOIN role ON role.id = player.role \
                                  WHERE player.discord_snowflake = ?';
     const existingPlayer = await db.get(existingPlayerQuery, player.id);
 
@@ -237,8 +235,8 @@ async function dropPlayer(interaction) {
     const player = interaction.options.getMember('player');
 
     const existingPlayerQuery = 'SELECT player.id, role.discord_snowflake AS roleSnowflake, role.name AS roleName, team.discord_snowflake AS teamSnowflake FROM player \
-                                 INNER JOIN team ON team.id = player.team \
-                                 INNER JOIN role ON role.id = player.role \
+                                 LEFT JOIN team ON team.id = player.team \
+                                 LEFT JOIN role ON role.id = player.role \
                                  WHERE player.discord_snowflake = ?';
     const existingPlayer = await db.get(existingPlayerQuery, player.id);
 
@@ -271,8 +269,8 @@ async function setPlayerInactive(interaction) {
     const player = interaction.options.getUser('player');
 
     const existingPlayerQuery = 'SELECT player.id, player.active, role.discord_snowflake AS roleSnowflake, role.name AS roleName, team.discord_snowflake AS teamSnowflake FROM player \
-                                 INNER JOIN team ON team.id = player.team \
-                                 INNER JOIN role ON role.id = player.role \
+                                 LEFT JOIN team ON team.id = player.team \
+                                 LEFT JOIN role ON role.id = player.role \
                                  WHERE player.discord_snowflake = ?';
     const existingPlayer = await db.get(existingPlayerQuery, player.id);
 

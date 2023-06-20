@@ -257,7 +257,7 @@ async function notifyOwnersIfAllLineupsIn() {
         await captainChannel.send({
             content: `${roleMention(process.env.ownerRoleId)} all lineups are in -- run /season next_week when you've confirmed.`,
             allowedMentions: { parse: ['roles'] }
-        })
+        });
     }
 }
 

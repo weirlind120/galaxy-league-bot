@@ -1,5 +1,5 @@
-import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention, spoiler } from 'discord.js';
-import { confirmAction, sendFailure, addModOverrideableFailure } from './util.js';
+import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention, spoiler, italic } from 'discord.js';
+import { confirmAction, sendFailure } from './util.js';
 import { db, currentSeason, channels, mushiLeagueGuild } from '../globals.js';
 
 export const MATCH_COMMAND = {
@@ -141,16 +141,16 @@ async function startMatch(interaction) {
 
     const currentlyPlayingRole = process.env.currentlyPlayingRoleId;
     const player = interaction.options.getMember('player') || interaction.member;
-    const opponent = interaction.options.getMember('opponent') || await getOpponent(player.user.id);
+    const opponent = interaction.options.getMember('opponent') || await mushiLeagueGuild.members.fetch(await getOpponent(player.user.id));
 
     if (!opponent) {
         failures.push("Opponent not found. This doesn't seem to be a mushi league match? use the opponent option to specify.");
     }
 
-    if (sendFailure(failures)) return;
+    if (sendFailure(interaction, failures)) return;
 
     const confirmLabel = 'Confirm Start Match';
-    const confirmMessage = `${player.user} and ${userMention(opponent)} given the currently playing role.`;
+    const confirmMessage = `${player.user} and ${opponent.user} given the currently playing role.`;
     const cancelMessage = 'Nobody given the currently playing role.';
 
     if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage)) {
@@ -247,8 +247,9 @@ async function reportMatch(interaction, userIsMod) {
         const winnerText = leftPlayer === winnerData
             ? spoiler('>')
             : spoiler('<');
-        const matchReportHeader = `${leftPlayerText} ${winnerText} ${rightPlayerText}`;
-        const matchReportMessage = matchReportHeader.concat('\n', games.join('\n'));
+        const matchReportHeader = `${leftPlayerText} ${winnerText} ${rightPlayerText}\n`;
+        const extensionMessage = extension ? italic('\n(Extension from last week)') : '';
+        const matchReportMessage = matchReportHeader.concat(games.join('\n'), extensionMessage);
 
         const matchReportChannel = await channels.fetch(process.env.matchReportChannelId);
         await matchReportChannel.send({
@@ -315,7 +316,8 @@ async function awardActWin(interaction, userIsMod) {
         const leftPlayerText = `(${roleMention(leftPlayer.teamSnowflake)}) ${userMention(leftPlayer.discord_snowflake)}`;
         const rightPlayerText = `${userMention(rightPlayer.discord_snowflake)} (${roleMention(rightPlayer.teamSnowflake)})`;
         const winnerText = leftPlayer === winnerData ? '>' : '<';
-        const matchReportMessage = `${leftPlayerText} ${winnerText} ${rightPlayerText} on activity`;
+        const extensionMessage = extension ? italic('\n(Extension from last week)') : '';
+        const matchReportMessage = `${leftPlayerText} ${winnerText} ${rightPlayerText} on activity${extensionMessage}`;
 
         const matchReportChannel = await channels.fetch(process.env.matchReportChannelId);
         await matchReportChannel.send({
@@ -371,7 +373,8 @@ async function markDeadGame(interaction, userIsMod) {
 
         const leftPlayerText = `(${roleMention(leftPlayer.teamSnowflake)}) ${userMention(leftPlayer.discord_snowflake)}`;
         const rightPlayerText = `${userMention(rightPlayer.discord_snowflake)} (${roleMention(rightPlayer.teamSnowflake)})`;
-        const matchReportMessage = `${leftPlayerText} vs ${rightPlayerText} marked dead`;
+        const extensionMessage = extension ? italic('\n(Extension from last week)') : '';
+        const matchReportMessage = `${leftPlayerText} vs ${rightPlayerText} marked dead${extensionMessage}`;
 
         const matchReportChannel = await channels.fetch(process.env.matchReportChannelId);
         await matchReportChannel.send({

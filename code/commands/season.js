@@ -323,6 +323,7 @@ async function nextWeek(interaction) {
 
     if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage)) {
         await advanceCurrentWeek();
+        await updateMatchReportsHeader();
         await createExtensionRooms(pairingsNeedingExtension);
         for (const matchup of matchupsMissingLineups) {
             await autoGenerateLineup(matchup);
@@ -336,6 +337,30 @@ async function nextWeek(interaction) {
 async function advanceCurrentWeek() {
     currentSeason.current_week += 1;
     await db.run('UPDATE season SET current_week = ?', currentSeason.current_week);
+}
+
+async function updateMatchReportsHeader() {
+    const matchReportChannel = await channels.fetch(process.env.matchReportChannelId);
+
+    const oldHeader = (await matchReportChannel.messages.fetchPinned())[0];
+    await matchReportChannel.messages.unpin(oldHeader.id);
+
+    const weekHeader = await matchReportChannel.send(bold(`----- ${weekName()} games -----`));
+    await weekHeader.pin();
+}
+
+function weekName() {
+    if (currentSeason.current_week <= currentSeason.regular_weeks) {
+        return `Week ${currentSeason.current_week}`;
+    }
+
+    const totalWeeks = currentSeason.regular_weeks + Math.ceil(Math.log2(currentSeason.playoff_size));
+    switch (currentSeason.current_week) {
+        case totalWeeks: return 'Finals';
+        case totalWeeks - 1: return 'Semifinals';
+        case totalWeeks - 2: return 'Quarterfinals';
+        default: return 'go yell at jumpy to fix this';
+    }
 }
 
 export async function createExtensionRooms(pairingsNeedingExtension) {
@@ -384,10 +409,12 @@ async function notifyPairings(pairingSet, extensionRoom) {
         '\nGet your games done. You have 24 hours.'
     );
 
-    extensionRoom.send({
+    const extensionPost = await extensionRoom.send({
         content: extensionMessage,
         allowedMentions: { parse: ['users'] }
     });
+
+    await extensionPost.pin();
 }
 
 async function autoGenerateLineup(matchup, interaction) {
