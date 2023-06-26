@@ -131,7 +131,7 @@ async function updatePlayerStats(pairing) {
     }
     else {
         const spread = getSpread(pairing.winningStars, pairing.losingStars);
-        await db.run('UPDATE pstat SET wins = wins + 1, star_points = star_points - ? WHERE season = ? AND player = ?', spread, currentSeason.number, pairing.winningId);
+        await db.run('UPDATE pstat SET wins = wins + 1, star_points = star_points + ? WHERE season = ? AND player = ?', spread, currentSeason.number, pairing.winningId);
         await db.run('UPDATE pstat SET losses = losses + 1, star_points = star_points - ? WHERE season = ? AND player = ?', spread, currentSeason.number, pairing.losingId);
     }
 }
@@ -230,13 +230,13 @@ async function advancePlayoffWinners(teamWins) {
     const winners = [];
 
     matchups.forEach(matchup => {
-        const differential = teamWins[matchup.left_team] - teamWins[matchup.right_team];
+        const differential = teamWins[matchup.leftId] - teamWins[matchup.rightId];
 
         if (differential > 0) {
-            winners.push(matchup.left_team);
+            winners.push(matchup.leftId);
         }
         else {
-            winners.push(matchup.right_team);
+            winners.push(matchup.rightId);
         }
     });
 

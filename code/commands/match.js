@@ -166,7 +166,7 @@ async function linkMatch(interaction) {
     const ping = interaction.options.getBoolean('ping');
     const number = interaction.options.getNumber('number');
     const player = interaction.member;
-    const opponent = getOpponent(player.user.id);
+    const opponent = await getOpponent(player.user.id);
 
     if (!player.roles.cache.has(process.env.currentlyPlayingRoleId)) {
         failures.push("You're not barred from #live-matches! Link it yourself, you bum.");
@@ -193,7 +193,7 @@ async function linkMatch(interaction) {
     }
 }
 
-async function reportMatch(interaction, userIsMod) {
+async function reportMatch(interaction) {
     const winner = interaction.options.getUser('winner');
     const games = [
         interaction.options.getString('game1'),
@@ -444,7 +444,7 @@ async function getOpponent(playerSnowflake) {
                                     AND pairing.left_player = (SELECT id FROM player WHERE discord_snowflake = ?) \
                                ORDER BY pairing.id ASC LIMIT 1';
 
-    return (await db.get(opponentQuery, playerSnowflake, playerSnowflake)).discord_snowflake;
+    return (await db.get(opponentQuery, playerSnowflake, playerSnowflake))?.discord_snowflake;
 }
 
 export async function getOpenPairings(asOfWeek) {
