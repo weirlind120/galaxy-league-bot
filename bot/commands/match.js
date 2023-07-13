@@ -1,11 +1,39 @@
-import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention, spoiler, italic } from 'discord.js';
+import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention, spoiler, italic, time, hyperlink, EmbedBuilder } from 'discord.js';
 import { confirmAction, sendFailure } from './util.js';
 import { db, currentSeason, channels, mushiLeagueGuild } from '../globals.js';
+import { set, parse, isValid, sub } from 'date-fns';
 
 export const MATCH_COMMAND = {
     data: new SlashCommandBuilder()
         .setName('match')
         .setDescription('updates the status of a pairing')
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('schedule')
+                .setDescription('Set the scheduled time for a match')
+                .addStringOption(option =>
+                    option
+                        .setName('time')
+                        .setDescription('the scheduled time. Accepted formats: [Tuesday 11:00 PM], [Sunday 1 PM], [Wednesday 21:30]')
+                        .setRequired(true))
+                .addNumberOption(option =>
+                    option
+                        .setName('timezone')
+                        .setDescription('the timezone as a pure GMT number (e.g. +5.5, -4)')
+                        .setMinValue(-12)
+                        .setMaxValue(13))
+                .addBooleanOption(option =>
+                    option
+                        .setName('inexact')
+                        .setDescription('whether the time is inexact'))
+                .addUserOption(option =>
+                    option
+                        .setName('player')
+                        .setDescription('name of either player in the bo3, defaults to yourself'))
+                .addBooleanOption(option =>
+                    option
+                        .setName('extension')
+                        .setDescription('whether this is an extension match')))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('start')
@@ -17,7 +45,11 @@ export const MATCH_COMMAND = {
                 .addUserOption(option =>
                     option
                         .setName('opponent')
-                        .setDescription('name of the other player in the bo3, can default in mushi league opps')))
+                        .setDescription('name of the other player in the bo3, can default in mushi league opps'))
+                .addBooleanOption(option =>
+                    option
+                        .setName('extension')
+                        .setDescription('whether this is an extension match')))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('link')
@@ -34,7 +66,11 @@ export const MATCH_COMMAND = {
                 .addBooleanOption(option =>
                     option
                         .setName('ping')
-                        .setDescription('whether to ping @spectator')))
+                        .setDescription('whether to ping @spectator'))
+                .addBooleanOption(option =>
+                    option
+                        .setName('extension')
+                        .setDescription('whether this is an extension match')))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('report')
@@ -114,6 +150,9 @@ export const MATCH_COMMAND = {
         const userIsMod = interaction.member.permissions.has(PermissionFlagsBits.ManageChannels);
 
         switch (interaction.options.getSubcommand()) {
+            case 'schedule':
+                await scheduleMatch(interaction);
+                break;
             case 'start':
                 await startMatch(interaction);
                 break;
@@ -136,12 +175,82 @@ export const MATCH_COMMAND = {
     }
 }
 
+async function scheduleMatch(interaction) {
+    let failures = [], prompts = [];
+
+    const dateString = interaction.options.getString('time');
+    const inexact = interaction.options.getBoolean('inexact');
+    const timezone = interaction.options.getNumber('timezone');
+    let date = dateString;
+
+    if (!inexact && !timezone) {
+        await sendFailure('You either need to specify that the time is inexact, or give a timezone');
+        return;
+    }
+
+    if (!inexact) {
+        const localDate = parseDateInput(dateString);
+
+        if (!localDate) {
+            await sendFailure(interaction, "Couldn't parse the date string. Please either specify that it's inexact, or pass it in formatted like [Sunday 4:00 PM], [Sunday 4 PM], or [Sunday 16:00]");
+            return;
+        }
+
+        const botTimezone = localDate.getTimezoneOffset() / -60;
+        date = time(sub(localDate, { hours: timezone - botTimezone }));
+    }
+
+    const player = interaction.options.getUser('player') || interaction.user;
+    const extension = interaction.options.getBoolean('extension');
+    const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
+    const opponent = await mushiLeagueGuild.members.fetch(await getOpponent(player.id, week));
+
+    if (sendFailure(interaction, failures)) return;
+
+    const confirmLabel = 'Confirm Schedule';
+    const confirmMessage = `${player} and ${opponent.user}'s game scheduled for ${date}`;
+    const cancelMessage = 'Game schedule not changed.';
+
+    if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage)) {
+        await setScheduledTime(player, week, date);
+    }
+}
+
+function parseDateInput(dateString) {
+    const allowedInputs = [
+        'iiii hh:mm a',
+        'iiii hh a',
+        'iiii HH:mm',
+    ];
+
+    const referenceDate = set(new Date(), { minutes: 0 });
+
+    for (const format of allowedInputs) {
+        const attempt = parse(dateString, format, referenceDate);
+        if (isValid(attempt)) {
+            return attempt;
+        }
+    }
+
+    return false;
+}
+
+async function setScheduledTime(player, week, newValue) {
+    const mainRoom = await channels.fetch(process.env.mainRoomId);
+    const scheduleMessageId = (await db.get('SELECT schedule_post FROM week WHERE number = ? AND season = ?', week, currentSeason.number)).schedule_post;
+    const scheduleMessage = await mainRoom.messages.fetch({ message: scheduleMessageId, force: true });
+    const newScheduleMessage = scheduleMessage.content.replace(RegExp(`^(.*${player.id}.*>:).*$`, 'm'), `$1 ${newValue}`);
+    await scheduleMessage.edit(newScheduleMessage);
+}
+
 async function startMatch(interaction) {
     let failures = [], prompts = [];
 
     const currentlyPlayingRole = process.env.currentlyPlayingRoleId;
     const player = interaction.options.getMember('player') || interaction.member;
-    const opponent = interaction.options.getMember('opponent') || await mushiLeagueGuild.members.fetch(await getOpponent(player.user.id));
+    const extension = interaction.options.getBoolean('extension');
+    const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
+    const opponent = interaction.options.getMember('opponent') || await mushiLeagueGuild.members.fetch(await getOpponent(player.user.id, week));
 
     if (!opponent) {
         failures.push("Opponent not found. This doesn't seem to be a mushi league match? use the opponent option to specify.");
@@ -166,7 +275,9 @@ async function linkMatch(interaction) {
     const ping = interaction.options.getBoolean('ping');
     const number = interaction.options.getNumber('number');
     const player = interaction.member;
-    const opponent = await getOpponent(player.user.id);
+    const extension = interaction.options.getBoolean('extension');
+    const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
+    const opponent = await getOpponent(player.user.id, week);
 
     if (!player.roles.cache.has(process.env.currentlyPlayingRoleId)) {
         failures.push("You're not barred from #live-matches! Link it yourself, you bum.");
@@ -242,32 +353,67 @@ async function reportMatch(interaction) {
     if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage)) {
         await db.run(`UPDATE pairing SET winner = ?, game1 = ?, game2 = ?, game3 = ?, game4 = ?, game5 = ?, dead = NULL WHERE id = ?`, winnerData.id, games[0], games[1], games.at(2), games.at(3), games.at(4), pairing.id);
 
-        const leftPlayerText = `(${roleMention(leftPlayer.teamSnowflake)}) ${userMention(leftPlayer.discord_snowflake)}`;
-        const rightPlayerText = `${userMention(rightPlayer.discord_snowflake)} (${roleMention(rightPlayer.teamSnowflake)})`;
-        const winnerText = leftPlayer === winnerData
-            ? spoiler('>')
-            : spoiler('<');
-        const matchReportHeader = `${leftPlayerText} ${winnerText} ${rightPlayerText}\n`;
-        const extensionMessage = extension ? italic('\n(Extension from last week)') : '';
-        const matchReportMessage = matchReportHeader.concat(games.join('\n'), extensionMessage);
-
-        const matchReportChannel = await channels.fetch(process.env.matchReportChannelId);
-        await matchReportChannel.send({
-            content: matchReportMessage,
-            allowedMentions: { parse: [] }
-        });
-
-        const currentlyPlayingRole = process.env.currentlyPlayingRoleId;
-
-        const player1 = await mushiLeagueGuild.members.fetch(leftPlayer.discord_snowflake);
-        const player2 = await mushiLeagueGuild.members.fetch(rightPlayer.discord_snowflake);
-
-        await player1.roles.remove(currentlyPlayingRole);
-        await player2.roles.remove(currentlyPlayingRole);
-
-        await notifyOwnersIfAllMatchesDone();
+        await postReplays(leftPlayer, rightPlayer, winnerData, extension, games);
+        await removePlayingRole(leftPlayer, rightPlayer);
         await updatePredictions(pairing, false, leftPlayer === winnerData);
+        await setScheduledTime(player1.user, week, 'DONE');
+        await notifyOwnersIfAllMatchesDone();
     }
+}
+
+async function postReplays(leftPlayer, rightPlayer, winnerData, extension, games) {
+    const matchReportChannel = await channels.fetch(process.env.matchReportChannelId);
+    await matchReportChannel.send({
+        embeds: [makeReplayEmbed(leftPlayer, rightPlayer, winnerData, extension, games)],
+        allowedMentions: { parse: [] }
+    });
+}
+
+function makeReplayPlaintext(leftPlayer, rightPlayer, winnerData, extension, games) {
+    const leftPlayerText = `(${roleMention(leftPlayer.teamSnowflake)}) ${userMention(leftPlayer.discord_snowflake)}`;
+    const rightPlayerText = `${userMention(rightPlayer.discord_snowflake)} (${roleMention(rightPlayer.teamSnowflake)})`;
+    const winnerText = leftPlayer === winnerData
+        ? spoiler('>')
+        : spoiler('<');
+    const matchReportHeader = `${leftPlayerText} ${winnerText} ${rightPlayerText}\n`;
+    const extensionMessage = extension ? italic('\n(Extension from last week)') : '';
+
+    let links = [];
+
+    for (let i = 0; i < Math.max(games.length, 3); i++) {
+        links.push(hyperlink(`game ${i + 1}`, games.at(i) || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'));
+    }
+
+    return matchReportHeader.concat(links.join('\n'), extensionMessage);
+}
+
+function makeReplayEmbed(leftPlayer, rightPlayer, winnerData, extension, games) {
+    let gameFields = [];
+
+    for (let i = 0; i < Math.max(games.length, 3); i++) {
+        gameFields.push({ name: `game ${i + 1}`, value: hyperlink('link', games.at(i) || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'), inline: true });
+    }
+
+    const leftPlayerText = `(${roleMention(leftPlayer.teamSnowflake)}) ${userMention(leftPlayer.discord_snowflake)}`;
+    const rightPlayerText = `${userMention(rightPlayer.discord_snowflake)} (${roleMention(rightPlayer.teamSnowflake)})`;
+    const winnerText = (leftPlayer === winnerData)
+        ? spoiler('>')
+        : spoiler('<');
+    const extensionMessage = extension ? italic('\n(Extension from last week)') : '';
+
+    return new EmbedBuilder()
+        .setDescription(`${leftPlayerText} ${winnerText} ${rightPlayerText}${extensionMessage}`)
+        .addFields(...gameFields);
+}
+
+async function removePlayingRole(leftPlayer, rightPlayer) {
+    const currentlyPlayingRole = process.env.currentlyPlayingRoleId;
+
+    const player1 = await mushiLeagueGuild.members.fetch(leftPlayer.discord_snowflake);
+    const player2 = await mushiLeagueGuild.members.fetch(rightPlayer.discord_snowflake);
+
+    await player1.roles.remove(currentlyPlayingRole);
+    await player2.roles.remove(currentlyPlayingRole);
 }
 
 async function awardActWin(interaction, userIsMod) {
@@ -429,22 +575,26 @@ async function undoReport(interaction, userIsMod) {
         await db.run('UPDATE pairing SET winner = NULL, dead = NULL WHERE id = ?', pairing.id);
 
         await resetPredictions(pairing, leftPlayer.discord_snowflake, rightPlayer.discord_snowflake);
+        await setScheduledTime(player, week, '');
     }
 }
 
-async function getOpponent(playerSnowflake) {
+async function getOpponent(playerSnowflake, week) {
     const opponentQuery = 'SELECT pairing.id, player.discord_snowflake FROM pairing \
                                INNER JOIN player ON player.id = pairing.left_player \
-                               WHERE pairing.dead IS NULL AND pairing.winner IS NULL \
-                                     AND pairing.right_player = (SELECT id FROM player WHERE discord_snowflake = ?) \
+                               INNER JOIN matchup ON matchup.id = pairing.matchup \
+                               INNER JOIN week ON week.id = matchup.week \
+                               WHERE pairing.right_player = (SELECT id FROM player WHERE discord_snowflake = ?) \
+                                    AND week.number = ? AND week.season = ? \
                                UNION \
                                SELECT pairing.id, player.discord_snowflake FROM pairing \
                                INNER JOIN player ON player.id = pairing.right_player \
-                               WHERE pairing.dead IS NULL AND pairing.winner IS NULL \
-                                    AND pairing.left_player = (SELECT id FROM player WHERE discord_snowflake = ?) \
-                               ORDER BY pairing.id ASC LIMIT 1';
+                               INNER JOIN matchup ON matchup.id = pairing.matchup \
+                               INNER JOIN week ON week.id = matchup.week \
+                               WHERE pairing.left_player = (SELECT id FROM player WHERE discord_snowflake = ?) \
+                                    AND week.number = ? AND week.season = ?';
 
-    return (await db.get(opponentQuery, playerSnowflake, playerSnowflake))?.discord_snowflake;
+    return (await db.get(opponentQuery, playerSnowflake, week, currentSeason.number, playerSnowflake, week, currentSeason.number))?.discord_snowflake;
 }
 
 export async function getOpenPairings(asOfWeek) {

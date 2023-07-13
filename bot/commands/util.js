@@ -46,7 +46,6 @@ export function sendFailure(interaction, failures, deferred) {
 
     if (failures) {
         if (deferred) {
-
             interaction.editReply({ content: `Action FAILED:\n${failures}`, ephemeral: true });
         }
         else {

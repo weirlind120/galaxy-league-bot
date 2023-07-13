@@ -11,5 +11,5 @@ export async function setGlobals(client) {
     channels = client.channels;
     mushiLeagueGuild = await client.guilds.fetch(process.env.guildId);
     db = await open({ filename: '../database/mushi_league.db', driver: sqlite3.Database });
-    currentSeason = (await db.get('SELECT * FROM season ORDER BY number DESC'));
+    currentSeason = (await db.get('SELECT * FROM season ORDER BY number DESC LIMIT 1'));
 }

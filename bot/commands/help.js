@@ -12,9 +12,10 @@ export const HELP_COMMAND = {
             '\n' +
             `\n${italic('public')}` +
             `\n    ${bold('/match')}   commands to set the outcome of a match` +
+            `\n        ${bold('schedule')}   adds a scheduled time to the main room` +
             `\n        ${bold('start')}   gives both players the role which bars them from #live-matches` +
             `\n        ${bold('link')}   links a game in #live-matches` +
-            `\n        ${bold('report')}   report the result of a played set` +
+            `\n        ${bold('report')}   reports the result of a played set` +
             `\n    ${bold('/help')}   ...this`;
 
         if (interaction.member.roles.cache.some(role => role.name === 'Coach') ||

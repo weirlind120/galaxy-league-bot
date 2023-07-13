@@ -83,7 +83,7 @@ async function calculateStandings(interaction) {
                 teamWins[pairing.winningTeam] = (teamWins[pairing.winningTeam] || 0) + 1;
             }
 
-            await updatePlayerStats(pairing);
+            //await updatePlayerStats(pairing);
         };
         
         if (nextStandingsWeek <= currentSeason.regular_weeks) {
@@ -268,8 +268,10 @@ async function announceNextPlayoffRound() {
 }
 
 async function declareWinner(winner) {
-    await announceWinner(winner);
-    await makeWinnerRole(winner);
+    const winnerRole = (await db.get('SELECT discord_snowflake FROM team WHERE id = ?', winner)).discord_snowflake;
+
+    await announceWinner(winnerRole);
+    await makeWinnerRole(winnerRole);
 }
 
 async function announceWinner(winner) {
@@ -331,22 +333,23 @@ async function nextWeek(interaction) {
         const groupedPairings = groupPairingsByRoom(await getNextPairings());
         await updateMatchRooms(groupedPairings);
         await postPredictions(groupedPairings);
+        await postScheduling(groupedPairings);
     }
 }
 
 async function advanceCurrentWeek() {
     currentSeason.current_week += 1;
-    await db.run('UPDATE season SET current_week = ?', currentSeason.current_week);
+    await db.run('UPDATE season SET current_week = ? WHERE number = ?', currentSeason.current_week, currentSeason.number);
 }
 
 async function updateMatchReportsHeader() {
     const matchReportChannel = await channels.fetch(process.env.matchReportChannelId);
 
-    const oldHeader = (await matchReportChannel.messages.fetchPinned())[0];
+    const oldHeader = (await matchReportChannel.messages.fetchPinned()).values().next().value;
     await matchReportChannel.messages.unpin(oldHeader.id);
 
     const weekHeader = await matchReportChannel.send(bold(`----- ${weekName()} games -----`));
-    await weekHeader.pin();
+    await matchReportChannel.messages.pin(weekHeader.id);
 }
 
 function weekName() {
@@ -363,14 +366,14 @@ function weekName() {
     }
 }
 
-export async function createExtensionRooms(pairingsNeedingExtension) {
+async function createExtensionRooms(pairingsNeedingExtension) {
     for (const pairingSet of groupPairingsByRoom(pairingsNeedingExtension).values()) {
         const extensionRoom = await createExtensionRoom(pairingSet);
         await notifyPairings(pairingSet, extensionRoom);
     };
 }
 
-export function groupPairingsByRoom(pairings) {
+function groupPairingsByRoom(pairings) {
     let pairingsByRoom = new Map();
 
     pairings.forEach(pairing => {
@@ -424,7 +427,7 @@ async function autoGenerateLineup(matchup, interaction) {
     await commitLineup(matchup, matchup.rigged_count, lineup, submitter);
 }
 
-export async function getNextPairings() {
+async function getNextPairings() {
     const pairingQuery = 'SELECT pairing.id, pairing.matchup, pairing.slot, matchup.room, leftPlayer.discord_snowflake AS leftPlayerSnowflake, leftTeam.discord_snowflake AS leftTeamSnowflake, leftTeam.emoji AS leftEmoji, \
                           rightPlayer.discord_snowflake AS rightPlayerSnowflake, rightTeam.discord_snowflake AS rightTeamSnowflake, rightTeam.emoji AS rightEmoji FROM pairing \
                           INNER JOIN matchup ON pairing.matchup = matchup.id \
@@ -525,7 +528,7 @@ const rules = 'A few rules to remember:\n' +
               '\n' + 
               'GL HF!';
 
-export async function postPredictions(groupedPairings) {
+async function postPredictions(groupedPairings) {
     const predictionsChannel = await channels.fetch(process.env.predictionsChannelId);
     for (const pairingSet of groupedPairings.values()) {
         await postPredictionsForMatchup(predictionsChannel, pairingSet);
@@ -556,4 +559,28 @@ async function sendPredictionMessage(predictionsChannel, content, leftEmoji, rig
     if (pairingId) {
         await db.run('UPDATE pairing SET predictions_message = ? WHERE id = ?', message.id, pairingId);
     }
+}
+
+export async function postScheduling(groupedPairings) {
+    const content = writeAllPairings(groupedPairings);
+
+    const mainRoom = await channels.fetch(process.env.mainRoomId);
+    const message = await mainRoom.send({
+        content: content,
+        allowedMentions: { parse: [] }
+    });
+    await db.run('UPDATE week SET schedule_post = ? WHERE season = ? AND number = ?', message.id, currentSeason.number, currentSeason.current_week);
+}
+
+function writeAllPairings(groupedPairings) {
+    let content = 'Scheduled times:';
+
+    for (const pairingSet of groupedPairings.values()) {
+        content = content.concat(
+            `\n\n${roleMention(pairingSet[0].leftTeamSnowflake)} vs ${roleMention(pairingSet[0].rightTeamSnowflake)}\n`,
+            ...pairingSet.map(pairing => `\n${userMention(pairing.leftPlayerSnowflake)} vs ${userMention(pairing.rightPlayerSnowflake)}:`)
+        );
+    }
+
+    return content;
 }

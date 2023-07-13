@@ -1,8 +1,8 @@
 {
   "ExpandedNodes": [
     "",
-    "\\commands"
+    "\\bot"
   ],
-  "SelectedNode": "\\commands\\player.js",
+  "SelectedNode": "\\compose.yaml",
   "PreviewInSolutionExplorer": false
 }

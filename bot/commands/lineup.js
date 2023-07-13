@@ -86,8 +86,8 @@ export const LINEUP_COMMAND = {
     async execute(interaction) {
         const userIsMod = interaction.member.permissions.has(PermissionFlagsBits.ManageChannels);
 
-        if (!interaction.member.roles.cache.has('Captain') && !interaction.member.roles.cache.has('Coach') && !userIsMod) {
-            sendFailure(interaction, 'You must be a captain, coach, or mod to use this command.');
+        if (!interaction.member.roles.cache.has(process.env.captainRoleId) && !interaction.member.roles.cache.has(process.env.coachRoleId) && !userIsMod) {
+            await sendFailure(interaction, 'You must be a captain, coach, or mod to use this command.');
         }
 
         switch (interaction.options.getSubcommand()) {
@@ -347,5 +347,11 @@ async function substitutePlayer(interaction, userIsMod) {
         const predictionsMessage = await predictionsRoom.messages.fetch({ message: replacedPlayerData.predictions_message, force: true });
         const newPredictionContent = predictionsMessage.content.replace(replacedPlayerData.discord_snowflake, newPlayerData.discord_snowflake);
         await predictionsMessage.edit(newPredictionContent);
+
+        const mainRoom = await channels.fetch(process.env.mainRoomId);
+        const scheduleMessageId = (await db.get('SELECT schedule_post FROM week WHERE number = ? AND season = ?', week, currentSeason.number)).schedule_post;
+        const scheduleMessage = await mainRoom.messages.fetch({ message: scheduleMessageId, force: true });
+        const newScheduleMessage = scheduleMessage.content.replace(replacedPlayerData.discord_snowflake, newPlayerData.discord_snowflake);
+        await scheduleMessage.edit(newScheduleMessage);
     }
 }
