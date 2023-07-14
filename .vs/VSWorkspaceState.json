@@ -1,8 +1,9 @@
 {
   "ExpandedNodes": [
     "",
-    "\\bot"
+    "\\bot",
+    "\\database"
   ],
-  "SelectedNode": "\\compose.yaml",
+  "SelectedNode": "\\.gitignore",
   "PreviewInSolutionExplorer": false
 }

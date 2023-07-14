@@ -11,8 +11,13 @@ services:
   bot:
     build:
       context: ./bot
+    volumes:
+      - db-data:/etc/data
     # If your application exposes a port, uncomment the following lines and change
     # the port numbers as needed. The first number is the host port and the second
     # is the port inside the container.
     # ports:
     #   - 8080:8080
+
+volumes:
+  db-data:
