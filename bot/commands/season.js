@@ -1,6 +1,7 @@
 import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention, bold, codeBlock } from 'discord.js';
+import shuffle from 'lodash/shuffle.js';
 import { confirmAction, sendFailure } from './util.js';
-import { db, currentSeason, channels, mushiLeagueGuild } from '../globals.js';
+import { db, currentSeason, channels, mushiLeagueGuild, setCurrentSeason } from '../globals.js';
 import { commitLineup, getMatchupsMissingLineups } from './lineup.js';
 import { getOpenPairings } from './match.js';
 
@@ -47,6 +48,75 @@ export const SEASON_COMMAND = {
     }
 }
 
+async function newSeason(interaction) {
+    let prompts = [], failures = [];
+
+    const length = interaction.options.getNumber('length');
+    const playoffSize = interaction.options.getNumber('playoff_size');
+
+    prompts.push('This will create a new season. ARE YOU SURE?');
+
+    if (sendFailure(interaction, failures)) return;
+
+    const confirmLabel = 'Confirm new season';
+    const confirmMessage = 'New season begun.';
+    const cancelMessage = 'No new season begun.';
+
+    if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage)) {
+        await dropAllPlayers();
+        await updateStarRankings(currentSeason.number);
+        await makeSeasonAndWeeks(currentSeason.number + 1, length, playoffSize);
+        await makeRegSeasonPairings(currentSeason.number + 1, length);
+
+        setCurrentSeason(db);
+    }
+}
+
+async function dropAllPlayers() {
+    await db.run('UPDATE player SET retain_rights = team, team = NULL, role = NULL');
+}
+
+async function updateStarRankings(season) {
+    await db.run('UPDATE player SET stars = (player.stars + (pstat.star_points / 100.0)) \
+                 FROM pstat WHERE pstat.player = player.id AND pstat.season = ?', season);
+}
+
+async function makeSeasonAndWeeks(season, length, playoffSize) {
+    await db.run('INSERT INTO season (number, current_week, regular_weeks, playoff_size) VALUES (?, ?, ?, ?)', season, 1, length, playoffSize);
+
+    for (let i = 0; i < length + Math.ceil(Math.log2(playoffSize)); i++) {
+        await db.run('INSERT INTO week (number, season) VALUES (?, ?)', i + 1, season);
+    }
+}
+
+export async function makeRegSeasonPairings(season, length) {
+    let teams = shuffle(await db.all('SELECT id FROM team WHERE active = 1'));
+
+    for (let i = 0; i < length; i++) {
+        await makeOneWeekOfPairings(season, teams, i + 1);
+        cycleTeams(teams);
+    }
+}
+
+async function makeOneWeekOfPairings(season, teams, week) {
+    for (let i = 0; i < teams.length / 2; i++) {
+        const leftTeam = teams[i];
+        const rightTeam = teams[teams.length - 1 - i];
+
+        await db.run('INSERT INTO matchup (room, week, left_team, right_team) SELECT ?, id, ?, ? FROM week WHERE season = ? AND number = ?', i + 1, leftTeam.id, rightTeam.id, season, week);
+    }
+}
+
+function cycleTeams(teams) {
+    const secondTeam = teams[1];
+
+    for (let i = 2; i < teams.length; i++) {
+        teams[i - 1] = teams[i];
+    }
+
+    teams[teams.length - 1] = secondTeam;
+}
+
 async function calculateStandings(interaction) {
     let prompts = [], failures = [];
 
@@ -83,7 +153,7 @@ async function calculateStandings(interaction) {
                 teamWins[pairing.winningTeam] = (teamWins[pairing.winningTeam] || 0) + 1;
             }
 
-            //await updatePlayerStats(pairing);
+            await updatePlayerStats(pairing);
         };
         
         if (nextStandingsWeek <= currentSeason.regular_weeks) {

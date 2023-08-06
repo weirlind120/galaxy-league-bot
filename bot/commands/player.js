@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, PermissionFlagsBits, roleMention } from 'discord.js';
 import { confirmAction, sendFailure } from './util.js';
-import { db } from '../globals.js';
+import { db, currentSeason } from '../globals.js';
 
 export const PLAYER_COMMAND = {
     data: new SlashCommandBuilder()
@@ -16,10 +16,29 @@ export const PLAYER_COMMAND = {
                         .setName('player')
                         .setDescription('Player')
                         .setRequired(true))
+                .addStringOption(option =>
+                    option
+                        .setName('name')
+                        .setDescription('Display name of player (for spreadsheet)')
+                        .setRequired(true))
                 .addNumberOption(option =>
                     option
                         .setName('stars')
                         .setDescription('Star rating of player')))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('rename')
+                .setDescription("Changes a player's name on the sheet")
+                .addUserOption(option =>
+                    option
+                        .setName('player')
+                        .setDescription('Player')
+                        .setRequired(true))
+                .addStringOption(option =>
+                    option
+                        .setName('new_name')
+                        .setDescription('New name')
+                        .setRequired(true)))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('rate')
@@ -87,6 +106,9 @@ export const PLAYER_COMMAND = {
             case 'add':
                 await addPlayer(interaction);
                 break;
+            case 'rename':
+                await renamePlayer(interaction);
+                break;
             case 'rate':
                 await ratePlayer(interaction);
                 break;
@@ -108,6 +130,7 @@ export const PLAYER_COMMAND = {
 
 async function addPlayer(interaction) {
     const player = interaction.options.getUser('player');
+    const name = interaction.options.getString('name');
     const stars = interaction.options.getNumber('stars');
 
     const existingPlayer = await db.get('SELECT id FROM player WHERE discord_snowflake = ?', player.id);
@@ -130,7 +153,33 @@ async function addPlayer(interaction) {
     const cancelMessage = `${player} not added to player pool.`;
 
     if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage)) {
-        await db.run(`INSERT INTO player (name, discord_snowflake, stars) VALUES (?, ?, ?)`, player.username, player.id, stars);
+        await db.run(`INSERT INTO player (name, discord_snowflake, stars) VALUES (?, ?, ?)`, name, player.id, stars);
+    }
+}
+
+async function renamePlayer(interaction) {
+    const player = interaction.options.getUser('player');
+    const name = interaction.options.getString('new_name');
+
+    const existingPlayer = await db.get('SELECT name FROM player WHERE discord_snowflake = ?', player.id);
+
+    let failures = [];
+    let prompts = [];
+
+    if (!existingPlayer) {
+        failures.push(`${player} is not in the pool; use /player add instead`);
+    }
+
+    if (sendFailure(interaction, failures)) {
+        return;
+    }
+
+    const confirmLabel = 'Confirm Rename Player';
+    const confirmMessage = `${player} renamed to ${name}.`;
+    const cancelMessage = `${player} not renamed from ${existingPlayer.name}.`;
+
+    if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage)) {
+        await db.run(`UPDATE player SET name = ? WHERE discord_snowflake = ?`, name, player.id);
     }
 }
 
@@ -189,6 +238,10 @@ async function assignPlayer(interaction) {
     let failures = [];
     let prompts = [];
 
+    if (!existingPlayer) {
+        sendFailure(interaction, `${player} is not in the pool; use /player add first`);
+        return;
+    }
     if (existingPlayer.teamSnowflake === newTeam.id && existingPlayer.roleSnowflake === newRole.id) {
         failures.push(`${player.user} is already assigned to ${newTeam} as a ${newRole}`);
     }
@@ -228,6 +281,7 @@ async function assignPlayer(interaction) {
 
         await db.run('UPDATE player SET team = team.id, role = role.id \
                       FROM team, role WHERE team.discord_snowflake = ? AND role.discord_snowflake = ? AND player.discord_snowflake = ?', newTeam.id, newRole.id, player.id);
+        await db.run('INSERT INTO roster (season, team, player, role) SELECT ?, team, id, role FROM player WHERE player.discord_snowflake = ?', currentSeason.number, player.id);
     }
 }
 

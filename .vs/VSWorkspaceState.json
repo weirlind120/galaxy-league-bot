@@ -2,8 +2,9 @@
   "ExpandedNodes": [
     "",
     "\\bot",
+    "\\bot\\commands",
     "\\database"
   ],
-  "SelectedNode": "\\.gitignore",
+  "SelectedNode": "\\bot\\commands\\season.js",
   "PreviewInSolutionExplorer": false
 }
