@@ -281,7 +281,6 @@ async function assignPlayer(interaction) {
 
         await db.run('UPDATE player SET team = team.id, role = role.id \
                       FROM team, role WHERE team.discord_snowflake = ? AND role.discord_snowflake = ? AND player.discord_snowflake = ?', newTeam.id, newRole.id, player.id);
-        await db.run('INSERT INTO roster (season, team, player, role) SELECT ?, team, id, role FROM player WHERE player.discord_snowflake = ?', currentSeason.number, player.id);
     }
 }
 

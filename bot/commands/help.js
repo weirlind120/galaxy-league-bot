@@ -16,7 +16,19 @@ export const HELP_COMMAND = {
             `\n        ${bold('start')}   gives both players the role which bars them from #live-matches` +
             `\n        ${bold('link')}   links a game in #live-matches` +
             `\n        ${bold('report')}   reports the result of a played set` +
+            `\n    ${bold('/data')}   commands to pull data from mushi league history` +
+            `\n        ${bold('scout')}   get a player's past replays` +
             `\n    ${bold('/help')}   ...this`;
+
+        if (interaction.member.roles.cache.some(role => role.name === 'Coach') ||
+            interaction.member.roles.cache.some(role => role.name === 'Captain')) {
+            helpText +=
+                '\n' +
+                `\n${italic('coach or captain only')}` +
+                `\n    ${bold('/draft')}   commands to manage draft` +
+                `\n        ${bold('list')}   see all available players in star order` +
+                `\n        ${bold('pick')}   add an available player to your team`;
+        }
 
         if (interaction.member.roles.cache.some(role => role.name === 'Coach') ||
             interaction.member.roles.cache.some(role => role.name === 'Captain') ||
@@ -33,7 +45,9 @@ export const HELP_COMMAND = {
             helpText +=
                 '\n' +
                 `\n${italic('mod only')}` +
-                `\n    ${bold('/match')}   commands to set the outcome of a match` +
+                `\n    ${bold('/lineup')}` +
+                `\n        ${bold('hound')}   ping captains for next week's lineups` +
+                `\n    ${bold('/match')}` +
                 `\n        ${bold('act')}   award an activity win` +
                 `\n        ${bold('dead')}   mark a match dead` +
                 `\n        ${bold('undo')}   undo a match report` +
@@ -51,7 +65,7 @@ export const HELP_COMMAND = {
                 '\n' +
                 `\n${italic('admin only')}` +
                 `\n    ${bold('/season')}   powerful and difficult-to-reverse commands to advance the season` +
-                `\n        ${bold('new')}   start a new season` +
+                `\n        ${bold('new')}   start a new season: drop all players from teams, update star points, make round robin matchups` +
                 `\n        ${bold('next_week')}   start the next week: make new match rooms, post predictions, make extension rooms` +
                 `\n        ${bold('calculate_standings')}   calculate the player and team standings after a week finishes, set up the next playoff round if applicable`;
         }

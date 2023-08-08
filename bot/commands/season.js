@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention, bold, codeBlock } from 'discord.js';
 import shuffle from 'lodash/shuffle.js';
-import { confirmAction, sendFailure } from './util.js';
+import { confirmAction, sendFailure, rightAlign } from './util.js';
 import { db, currentSeason, channels, mushiLeagueGuild, setCurrentSeason } from '../globals.js';
 import { commitLineup, getMatchupsMissingLineups } from './lineup.js';
 import { getOpenPairings } from './match.js';
@@ -89,7 +89,7 @@ async function makeSeasonAndWeeks(season, length, playoffSize) {
     }
 }
 
-export async function makeRegSeasonPairings(season, length) {
+async function makeRegSeasonPairings(season, length) {
     let teams = shuffle(await db.all('SELECT id FROM team WHERE active = 1'));
 
     for (let i = 0; i < length; i++) {
@@ -265,10 +265,6 @@ function prettyTextStanding(rank, standing) {
     return `${rightAlign(6, rank)}|${rightAlign(8, standing.points)}|${rightAlign(6, standing.battle_differential)}|${rightAlign(3, standing.wins)}|${rightAlign(3, standing.losses)}|${rightAlign(3, standing.ties)}| ${standing.teamName}`;
 }
 
-function rightAlign(space, value) {
-    return `${value} `.padStart(space, ' ');
-}
-
 async function setUpPlayoff(standings) {
     // I'm sure there's an algorithm but I do not feel like figuring it out right now
     if (currentSeason.playoff_size === 4) {
@@ -374,8 +370,8 @@ async function makeWinnerRole(winner) {
 async function nextWeek(interaction) {
     let prompts = [], failures = [];
 
-    const pairingsNeedingExtension = await getOpenPairings(currentSeason.current_week);
-    const matchupsMissingLineups = await getMatchupsMissingLineups();
+    const pairingsNeedingExtension = await getOpenPairings(currentSeason.number, currentSeason.current_week);
+    const matchupsMissingLineups = await getMatchupsMissingLineups(currentSeason.number, currentSeason.current_week + 1);
 
     pairingsNeedingExtension.forEach(pairing => {
         prompts.push(`(${roleMention(pairing.leftTeamSnowflake)}) ${userMention(pairing.leftPlayerSnowflake)} vs ${userMention(pairing.rightPlayerSnowflake)} (${roleMention(pairing.rightTeamSnowflake)}) will be granted an extension`);
@@ -526,7 +522,7 @@ async function setUpRoom(pairingSet, matchRoomName, matchRoom) {
     await matchRoom.setName(matchRoomName);
     const allTeamSnowflakes = (await db.all('SELECT discord_snowflake FROM team')).map(team => team.discord_snowflake);
 
-    if (pairingSet[0].room === parseInt(pairingSet[0].room)) {
+    if (pairingSet[0].room == parseInt(pairingSet[0].room)) {
         await setUpRegularRoom(pairingSet, matchRoom, allTeamSnowflakes);
     }
     else {
@@ -536,16 +532,18 @@ async function setUpRoom(pairingSet, matchRoomName, matchRoom) {
 
 async function setUpRegularRoom(pairingSet, matchRoom, allTeamSnowflakes) {
     const permissionOverwrites = matchRoom.permissionOverwrites.cache
-        .map(overwrite => ({ id: overwrite.id, deny: overwrite.deny, allow: overwrite.allow }))
+        .map(overwrite => ({ id: overwrite.id, deny: overwrite.deny, allow: overwrite.allow, type: overwrite.type }))
         .filter(overwrite => !allTeamSnowflakes.includes(overwrite.id))
         .concat([
             {
                 id: pairingSet[0].leftTeamSnowflake,
-                allow: PermissionFlagsBits.ViewChannel
+                allow: PermissionFlagsBits.ViewChannel,
+                type: 'role'
             },
             {
                 id: pairingSet[0].rightTeamSnowflake,
-                allow: PermissionFlagsBits.ViewChannel
+                allow: PermissionFlagsBits.ViewChannel,
+                type: 'role'
             },
         ]);
 
@@ -631,26 +629,23 @@ async function sendPredictionMessage(predictionsChannel, content, leftEmoji, rig
     }
 }
 
-export async function postScheduling(groupedPairings) {
-    const content = writeAllPairings(groupedPairings);
-
+async function postScheduling(groupedPairings) {
     const mainRoom = await channels.fetch(process.env.mainRoomId);
+
+    for (const pairingSet of groupedPairings.values()) {
+        await postSchedulingForMatchup(mainRoom, pairingSet);
+    }
+}
+
+async function postSchedulingForMatchup(mainRoom, pairingSet) {
+    let content = `${roleMention(pairingSet[0].leftTeamSnowflake)} vs ${roleMention(pairingSet[0].rightTeamSnowflake)} scheduled times:\n\n`.concat(
+        pairingSet.map(pairing => `${userMention(pairing.leftPlayerSnowflake)} vs ${userMention(pairing.rightPlayerSnowflake)}:`).join('\n')
+    );
+
     const message = await mainRoom.send({
         content: content,
         allowedMentions: { parse: [] }
     });
-    await db.run('UPDATE week SET schedule_post = ? WHERE season = ? AND number = ?', message.id, currentSeason.number, currentSeason.current_week);
-}
-
-function writeAllPairings(groupedPairings) {
-    let content = 'Scheduled times:';
-
-    for (const pairingSet of groupedPairings.values()) {
-        content = content.concat(
-            `\n\n${roleMention(pairingSet[0].leftTeamSnowflake)} vs ${roleMention(pairingSet[0].rightTeamSnowflake)}\n`,
-            ...pairingSet.map(pairing => `\n${userMention(pairing.leftPlayerSnowflake)} vs ${userMention(pairing.rightPlayerSnowflake)}:`)
-        );
-    }
-
-    return content;
+        
+    await db.run('UPDATE matchup SET schedule_message = ? WHERE id = ?', message.id, pairingSet[0].matchup);
 }

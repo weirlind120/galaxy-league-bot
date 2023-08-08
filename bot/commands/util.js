@@ -65,3 +65,11 @@ export function addModOverrideableFailure(userIsMod, failures, prompts, message)
         failures.push(message);
     }
 }
+
+export function rightAlign(space, value) {
+    return `${value} `.padStart(space, ' ');
+}
+
+export function fixFloat(float) {
+    return +float.toFixed(2);
+}

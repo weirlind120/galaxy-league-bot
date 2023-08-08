@@ -1,5 +1,5 @@
 import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention } from 'discord.js';
-import { confirmAction, sendFailure, addModOverrideableFailure } from './util.js';
+import { confirmAction, sendFailure, addModOverrideableFailure, fixFloat } from './util.js';
 import { db, currentSeason, channels } from '../globals.js';
 
 export const LINEUP_COMMAND = {
@@ -51,6 +51,14 @@ export const LINEUP_COMMAND = {
                     option
                         .setName('slot9')
                         .setDescription('Player in slot 9'))
+                .addUserOption(option =>
+                    option
+                        .setName('slot10')
+                        .setDescription('Player in slot 10'))
+                .addUserOption(option =>
+                    option
+                        .setName('slot11')
+                        .setDescription('Player in slot 11'))
                 .addRoleOption(option =>
                     option
                         .setName('team')
@@ -81,13 +89,18 @@ export const LINEUP_COMMAND = {
                 .addBooleanOption(option =>
                     option
                         .setName('extension')
-                        .setDescription('Whether this was an extension from last week'))),
+                        .setDescription('Whether this was an extension from last week')))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('hound')
+                .setDescription('Bothers captains for lineups')),
 
     async execute(interaction) {
         const userIsMod = interaction.member.permissions.has(PermissionFlagsBits.ManageChannels);
 
         if (!interaction.member.roles.cache.has(process.env.captainRoleId) && !interaction.member.roles.cache.has(process.env.coachRoleId) && !userIsMod) {
             await sendFailure(interaction, 'You must be a captain, coach, or mod to use this command.');
+            return;
         }
 
         switch (interaction.options.getSubcommand()) {
@@ -96,6 +109,9 @@ export const LINEUP_COMMAND = {
                 break;
             case 'substitution':
                 await substitutePlayer(interaction, userIsMod);
+                break;
+            case 'hound':
+                await houndCaptains(interaction, userIsMod);
                 break;
         }
     }
@@ -119,14 +135,16 @@ async function submitLineup(interaction, userIsMod) {
         interaction.options.getMember('slot6'),
         interaction.options.getMember('slot7'),
         interaction.options.getMember('slot8'),
-        interaction.options.getMember('slot9')
+        interaction.options.getMember('slot9'),
+        interaction.options.getMember('slot10'),
+        interaction.options.getMember('slot11')
     ].filter(member => !!member);
     const riggedCount = interaction.options.getNumber('number_rigged') || 0;
     const teamOption = interaction.options.getRole('team')?.id;
     const team = teamOption || submitter.teamSnowflake;
     const clear = interaction.options.getBoolean('clear');
 
-    if (!teamOption && submitter.roleName !== "Captain" && submitter.roleName !== "Coach") {
+    if (!teamOption && submitter?.roleName !== "Captain" && submitter?.roleName !== "Coach") {
         sendFailure(interaction, "You aren't a captain or coach, so you must specify the team you are submitting for.", deferred);
         return;
     }
@@ -185,7 +203,7 @@ async function submitLineup(interaction, userIsMod) {
             for (let j = i + 1; j < lineup.length; j++) {
                 const lowerPlayer = lineup[j];
 
-                if ((lowerPlayer.stars - player.stars) > 0.7) {
+                if ((fixFloat(lowerPlayer.stars) - fixFloat(player.stars)) > 0.7) {
                     const playerIndex = roster.findIndex(p => p.id === player.id);
                     let nextStrongestPlayerIndex = playerIndex - 1;
 
@@ -226,7 +244,7 @@ async function clearMatchup(matchup, interaction) {
     await db.run('DELETE FROM pairing WHERE matchup = ?', matchup.id);
 
     const otherTeam = matchup.left_team === matchup.teamId ? matchup.right_team : matchup.left_team;
-    const otherTeamRole = (await db.all('SELECT discord_snowflake FROM team WHERE team = ?', otherTeam));
+    const otherTeamRole = (await db.run('SELECT discord_snowflake FROM team WHERE id = ?', otherTeam)).discord_snowflake;
 
     const captainChannel = await channels.fetch(process.env.captainChannelId);
     await captainChannel.send({
@@ -252,7 +270,7 @@ export async function commitLineup(matchup, riggedCount, lineup, submitter) {
 }
 
 async function notifyOwnersIfAllLineupsIn() {
-    if ((await getMatchupsMissingLineups(currentSeason.current_week)).length === 0) {
+    if ((await getMatchupsMissingLineups(currentSeason.number, currentSeason.current_week + 1)).length === 0) {
         const captainChannel = await channels.fetch(process.env.captainChannelId);
         await captainChannel.send({
             content: `${roleMention(process.env.ownerRoleId)} all lineups are in -- run /season next_week when you've confirmed.`,
@@ -261,18 +279,20 @@ async function notifyOwnersIfAllLineupsIn() {
     }
 }
 
-export async function getMatchupsMissingLineups() {
+export async function getMatchupsMissingLineups(season, week) {
     const matchupsMissingLineupsQuery =
         'SELECT team.id AS teamId, team.discord_snowflake AS delinquentTeamSnowflake, matchup.left_team, matchup.right_team, matchup.slots, matchup.rigged_count FROM matchup \
          LEFT JOIN pairing ON pairing.matchup = matchup.id \
          INNER JOIN team ON team.id = matchup.left_team \
-         WHERE pairing.left_player IS NULL \
-         UNION ALL \
+         INNER JOIN week ON week.id = matchup.week \
+         WHERE pairing.left_player IS NULL AND week.season = ? AND week.number = ? \
+         UNION \
          SELECT team.id, team.discord_snowflake, matchup.left_team, matchup.right_team, matchup.slots AS matchupSlots, matchup.rigged_count FROM matchup \
          LEFT JOIN pairing ON pairing.matchup = matchup.id \
          INNER JOIN team ON team.id = matchup.right_team \
-         WHERE pairing.right_player IS NULL';
-    return await db.all(matchupsMissingLineupsQuery);
+         INNER JOIN week on week.id = matchup.week \
+         WHERE pairing.right_player IS NULL AND week.season = ? AND week.number = ?';
+    return await db.all(matchupsMissingLineupsQuery, season, week, season, week);
 }
 
 async function substitutePlayer(interaction, userIsMod) {
@@ -281,12 +301,12 @@ async function substitutePlayer(interaction, userIsMod) {
     const extension = interaction.options.getBoolean('extension');
     const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
 
-    const matchupQuery = 'SELECT matchup.id, matchup.slots, matchup.left_team, matchup.right_team, matchup.room, matchup.channel_message, team.id AS teamId, team.discord_snowflake AS teamSnowflake FROM matchup \
+    const matchupQuery = 'SELECT matchup.id, matchup.slots, matchup.left_team, matchup.right_team, matchup.room, matchup.channel_message, matchup.schedule_message, team.id AS teamId, team.discord_snowflake AS teamSnowflake FROM matchup \
          INNER JOIN week on matchup.week = week.id \
          INNER JOIN team on matchup.left_team = team.id \
          WHERE week.season = ? AND week.number = ? AND team.id = (SELECT team FROM player WHERE player.discord_snowflake = ?) \
          UNION \
-         SELECT matchup.id, matchup.slots, matchup.left_team, matchup.right_team, matchup.room, matchup.channel_message, team.id AS teamId, team.discord_snowflake AS teamSnowflake FROM matchup \
+         SELECT matchup.id, matchup.slots, matchup.left_team, matchup.right_team, matchup.room, matchup.channel_message, matchup.schedule_message, team.id AS teamId, team.discord_snowflake AS teamSnowflake FROM matchup \
          INNER JOIN week on matchup.week = week.id \
          INNER JOIN team on matchup.right_team = team.id \
          WHERE week.season = ? AND week.number = ? AND team.id = (SELECT team FROM player WHERE player.discord_snowflake = ?)';
@@ -323,7 +343,7 @@ async function substitutePlayer(interaction, userIsMod) {
     if (newPlayerData.roleName === 'Coach') {
         addModOverrideableFailure(userIsMod, failures, prompts, `You're subbing in ${newPlayer.user}, but they're a coach and can't play.`);
     }
-    if ((newPlayerData.stars - replacedPlayerData.stars) > 0.7) {
+    if ((fixFloat(newPlayerData.stars) - fixFloat(replacedPlayerData.stars)) > 0.7) {
         addModOverrideableFailure(userIsMod, failures, prompts, `You're subbing in ${newPlayer.user} over ${replacedPlayer.user}, but the star rules don't permit that.`);
     }
 
@@ -349,9 +369,25 @@ async function substitutePlayer(interaction, userIsMod) {
         await predictionsMessage.edit(newPredictionContent);
 
         const mainRoom = await channels.fetch(process.env.mainRoomId);
-        const scheduleMessageId = (await db.get('SELECT schedule_post FROM week WHERE number = ? AND season = ?', week, currentSeason.number)).schedule_post;
-        const scheduleMessage = await mainRoom.messages.fetch({ message: scheduleMessageId, force: true });
+        const scheduleMessage = await mainRoom.messages.fetch({ message: matchup.schedule_message, force: true });
         const newScheduleMessage = scheduleMessage.content.replace(replacedPlayerData.discord_snowflake, newPlayerData.discord_snowflake);
         await scheduleMessage.edit(newScheduleMessage);
     }
+}
+
+async function houndCaptains(interaction, userIsMod) {
+    if (!userIsMod) {
+        await sendFailure(interaction, 'You must be a mod to use this command!');
+        return;
+    }
+
+    const missingLineups = await getMatchupsMissingLineups(currentSeason.number, currentSeason.current_week + 1);
+
+    const pings = missingLineups.map(lineup => roleMention(lineup.delinquentTeamSnowflake)).join(', ')
+    const message = `${pings}: We're waiting on your lineups. Use /lineup submit to submit.`;
+
+    const captainRoom = await channels.fetch(process.env.captainChannelId);
+    await captainRoom.send({ content: message, allowedMentions: { parse: ['roles'] } });
+
+    await interaction.reply({ content: 'done', ephemeral: true });
 }

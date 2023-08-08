@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention } from 'discord.js';
 import { db, channels, currentSeason } from '../globals.js'
-import { makeRegSeasonPairings } from './season.js';
+import { } from './season.js';
 
 export const TEST_COMMAND = {
     data: new SlashCommandBuilder()
@@ -9,7 +9,10 @@ export const TEST_COMMAND = {
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
     async execute(interaction) {
-        await makeRegSeasonPairings(14, 6);
+
+        const groupedPairings = groupPairingsByRoom(await getNextPairings());
+
+        await postScheduling(groupedPairings);
 
         await interaction.reply({ content: 'done', ephemeral: true });
     }

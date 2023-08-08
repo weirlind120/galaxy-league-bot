@@ -183,8 +183,8 @@ async function scheduleMatch(interaction) {
     const timezone = interaction.options.getNumber('timezone');
     let date = dateString;
 
-    if (!inexact && !timezone) {
-        await sendFailure('You either need to specify that the time is inexact, or give a timezone');
+    if (!inexact && timezone == null) {
+        await sendFailure(interaction, 'You either need to specify that the time is inexact, or give a timezone');
         return;
     }
 
@@ -237,10 +237,23 @@ function parseDateInput(dateString) {
 
 async function setScheduledTime(player, week, newValue) {
     const mainRoom = await channels.fetch(process.env.mainRoomId);
-    const scheduleMessageId = (await db.get('SELECT schedule_post FROM week WHERE number = ? AND season = ?', week, currentSeason.number)).schedule_post;
+    const scheduleMessageId = await getScheduleMessage(currentSeason.number, week, player.id);
     const scheduleMessage = await mainRoom.messages.fetch({ message: scheduleMessageId, force: true });
     const newScheduleMessage = scheduleMessage.content.replace(RegExp(`^(.*${player.id}.*>:).*$`, 'm'), `$1 ${newValue}`);
     await scheduleMessage.edit(newScheduleMessage);
+}
+
+async function getScheduleMessage(season, week, playerId) {
+    const scheduleMessageQuery =
+        'SELECT schedule_message FROM matchup \
+         INNER JOIN week ON matchup.week = week.id \
+         WHERE week.season = ? AND week.number = ? AND matchup.left_team = (SELECT team FROM player WHERE player.discord_snowflake = ?) \
+         UNION \
+         SELECT schedule_message FROM matchup \
+         INNER JOIN week ON matchup.week = week.id \
+         WHERE week.season = ? AND week.number = ? AND matchup.right_team = (SELECT team FROM player WHERE player.discord_snowflake = ?)';
+
+    return (await db.get(scheduleMessageQuery, season, week, playerId, season, week, playerId)).schedule_message;
 }
 
 async function startMatch(interaction) {
@@ -597,7 +610,7 @@ async function getOpponent(playerSnowflake, week) {
     return (await db.get(opponentQuery, playerSnowflake, week, currentSeason.number, playerSnowflake, week, currentSeason.number))?.discord_snowflake;
 }
 
-export async function getOpenPairings(asOfWeek) {
+export async function getOpenPairings(season, week) {
     const openPairingsQuery =
         'SELECT leftPlayer.discord_snowflake AS leftPlayerSnowflake, leftTeam.discord_snowflake AS leftTeamSnowflake, \
                 rightPlayer.discord_snowflake AS rightPlayerSnowflake, rightTeam.discord_snowflake AS rightTeamSnowflake, pairing.matchup FROM pairing \
@@ -607,12 +620,12 @@ export async function getOpenPairings(asOfWeek) {
          INNER JOIN team AS rightTeam ON rightTeam.id = rightPlayer.team \
          INNER JOIN matchup ON matchup.id = pairing.matchup \
          INNER JOIN week ON week.id = matchup.week \
-         WHERE pairing.winner IS NULL AND pairing.dead IS NULL AND week.number = ? AND week.season = ?';
-    return await db.all(openPairingsQuery, asOfWeek, currentSeason.number);
+         WHERE pairing.winner IS NULL AND pairing.dead IS NULL AND week.season = ? AND week.number = ?';
+    return await db.all(openPairingsQuery, season, week);
 }
 
 async function notifyOwnersIfAllMatchesDone() {
-    if ((await getOpenPairings(currentSeason.current_week)).length === 0) {
+    if ((await getOpenPairings(currentSeason.number, currentSeason.current_week)).length === 0) {
         const captainChannel = await channels.fetch(process.env.captainChannelId);
         await captainChannel.send({
             content: `${roleMention(process.env.ownerRoleId)} all matches are in -- run /season calculate_standings when you've confirmed.`,
