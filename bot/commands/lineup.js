@@ -1,6 +1,8 @@
-import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention } from 'discord.js';
-import { confirmAction, sendFailure, addModOverrideableFailure, fixFloat } from './util.js';
+import { SlashCommandBuilder, roleMention, userMention } from 'discord.js';
+import { confirmAction, sendFailure, addModOverrideableFailure, fixFloat, userIsCaptain, userIsCoach, userIsMod, weekName } from './util.js';
 import { db, currentSeason, channels } from '../globals.js';
+import { changePredictionsPlayer } from '../features/predictions.js';
+import { changeScheduledPlayer } from '../features/schedule.js';
 
 export const LINEUP_COMMAND = {
     data: new SlashCommandBuilder()
@@ -93,25 +95,32 @@ export const LINEUP_COMMAND = {
         .addSubcommand(subcommand =>
             subcommand
                 .setName('hound')
-                .setDescription('Bothers captains for lineups')),
+                .setDescription('Bothers captains for lineups'))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('remind')
+                .setDescription('Remind the user what lineup was submitted')),
 
     async execute(interaction) {
-        const userIsMod = interaction.member.permissions.has(PermissionFlagsBits.ManageChannels);
+        const isMod = userIsMod(interaction.member);
 
-        if (!interaction.member.roles.cache.has(process.env.captainRoleId) && !interaction.member.roles.cache.has(process.env.coachRoleId) && !userIsMod) {
+        if (!userIsCaptain(interaction.member) && !userIsCoach(interaction.member) && !isMod) {
             await sendFailure(interaction, 'You must be a captain, coach, or mod to use this command.');
             return;
         }
 
         switch (interaction.options.getSubcommand()) {
             case 'submit':
-                await submitLineup(interaction, userIsMod);
+                await submitLineup(interaction, isMod);
                 break;
             case 'substitution':
-                await substitutePlayer(interaction, userIsMod);
+                await substitutePlayer(interaction, isMod);
                 break;
             case 'hound':
-                await houndCaptains(interaction, userIsMod);
+                await houndCaptains(interaction, isMod);
+                break;
+            case 'remind':
+                await remindLineup(interaction);
                 break;
         }
     }
@@ -121,8 +130,8 @@ async function submitLineup(interaction, userIsMod) {
     const deferred = !!(await interaction.deferReply({ ephemeral: true }));
 
     const submitterQuery = 'SELECT player.id, role.discord_snowflake AS roleSnowflake, role.name AS roleName, team.discord_snowflake AS teamSnowflake FROM player \
-                            INNER JOIN team ON team.id = player.team \
-                            INNER JOIN role ON role.id = player.role \
+                            LEFT JOIN team ON team.id = player.team \
+                            LEFT JOIN role ON role.id = player.role \
                             WHERE player.discord_snowflake = ?'
     const submitter = await db.get(submitterQuery, interaction.user.id);
 
@@ -144,7 +153,7 @@ async function submitLineup(interaction, userIsMod) {
     const team = teamOption || submitter.teamSnowflake;
     const clear = interaction.options.getBoolean('clear');
 
-    if (!teamOption && submitter?.roleName !== "Captain" && submitter?.roleName !== "Coach") {
+    if (!teamOption && !userIsCaptain(interaction.member) && userIsCoach(interaction.member)) {
         sendFailure(interaction, "You aren't a captain or coach, so you must specify the team you are submitting for.", deferred);
         return;
     }
@@ -207,7 +216,7 @@ async function submitLineup(interaction, userIsMod) {
                     const playerIndex = roster.findIndex(p => p.id === player.id);
                     let nextStrongestPlayerIndex = playerIndex - 1;
 
-                    while (roster[nextStrongestPlayerIndex].stars === player.stars || roster[nextStrongestPlayerIndex].roleName === "Coach") {
+                    while (roster[nextStrongestPlayerIndex].stars === player.stars || roster[nextStrongestPlayerIndex].roleName === 'Coach') {
                         nextStrongestPlayerIndex -= 1;
                     }
 
@@ -230,7 +239,7 @@ async function submitLineup(interaction, userIsMod) {
     const confirmMessage = `Lineup submitted for ${roleMention(team)}.\n${riggedCount} rigged pairings.\n`.concat(lineup.map(player => userMention(player.discord_snowflake)).join('\n'));
     const cancelMessage = 'No lineup submitted.';
 
-    if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage, true, true)) {
+    if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage, true, deferred)) {
         if (clear) {
             await clearMatchup(matchup, interaction);
         }
@@ -243,8 +252,8 @@ async function submitLineup(interaction, userIsMod) {
 async function clearMatchup(matchup, interaction) {
     await db.run('DELETE FROM pairing WHERE matchup = ?', matchup.id);
 
-    const otherTeam = matchup.left_team === matchup.teamId ? matchup.right_team : matchup.left_team;
-    const otherTeamRole = (await db.run('SELECT discord_snowflake FROM team WHERE id = ?', otherTeam)).discord_snowflake;
+    const otherTeam = (matchup.left_team === matchup.teamId) ? matchup.right_team : matchup.left_team;
+    const otherTeamRole = (await db.get('SELECT discord_snowflake FROM team WHERE id = ?', otherTeam)).discord_snowflake;
 
     const captainChannel = await channels.fetch(process.env.captainChannelId);
     await captainChannel.send({
@@ -314,7 +323,7 @@ async function substitutePlayer(interaction, userIsMod) {
 
     const side = (matchup.left_team === matchup.teamId) ? 'left' : 'right';
 
-    const playersQuery = `SELECT player.id, player.stars, player.discord_snowflake, pairing.slot, pairing.predictions_message, team.discord_snowflake AS teamSnowflake, role.name AS roleName FROM player \
+    const playersQuery = `SELECT player.id, player.stars, player.discord_snowflake, pairing.slot, pairing.winner, pairing.dead, pairing.predictions_message, team.discord_snowflake AS teamSnowflake, role.name AS roleName FROM player \
                           LEFT JOIN pairing on pairing.${side}_player = player.id AND pairing.matchup = ? \
                           INNER JOIN team ON team.id = player.team \
                           INNER JOIN role ON role.id = player.role \
@@ -346,6 +355,9 @@ async function substitutePlayer(interaction, userIsMod) {
     if ((fixFloat(newPlayerData.stars) - fixFloat(replacedPlayerData.stars)) > 0.7) {
         addModOverrideableFailure(userIsMod, failures, prompts, `You're subbing in ${newPlayer.user} over ${replacedPlayer.user}, but the star rules don't permit that.`);
     }
+    if (replacedPlayerData.winner || replacedPlayerData.dead) {
+        failures.push(userIsMod, failures, prompts, `You're subbing out ${replacedPlayer.user} but their match has already been decided. Get a mod to use /match undo if this sub is legit.`);
+    }
 
     if (sendFailure(interaction, failures)) {
         return;
@@ -363,15 +375,8 @@ async function substitutePlayer(interaction, userIsMod) {
         const newChannelContent = channelMessage.content.replace(replacedPlayerData.discord_snowflake, newPlayerData.discord_snowflake);
         await channelMessage.edit(newChannelContent);
 
-        const predictionsRoom = await channels.fetch(process.env.predictionsChannelId);
-        const predictionsMessage = await predictionsRoom.messages.fetch({ message: replacedPlayerData.predictions_message, force: true });
-        const newPredictionContent = predictionsMessage.content.replace(replacedPlayerData.discord_snowflake, newPlayerData.discord_snowflake);
-        await predictionsMessage.edit(newPredictionContent);
-
-        const mainRoom = await channels.fetch(process.env.mainRoomId);
-        const scheduleMessage = await mainRoom.messages.fetch({ message: matchup.schedule_message, force: true });
-        const newScheduleMessage = scheduleMessage.content.replace(replacedPlayerData.discord_snowflake, newPlayerData.discord_snowflake);
-        await scheduleMessage.edit(newScheduleMessage);
+        await changeScheduledPlayer(matchup.schedule_message, replacedPlayerData.discord_snowflake, newPlayerData.discord_snowflake);
+        await changePredictionsPlayer(replacedPlayerData.predictions_message, replacedPlayerData.discord_snowflake, newPlayerData.discord_snowflake);
     }
 }
 
@@ -390,4 +395,44 @@ async function houndCaptains(interaction, userIsMod) {
     await captainRoom.send({ content: message, allowedMentions: { parse: ['roles'] } });
 
     await interaction.reply({ content: 'done', ephemeral: true });
+}
+
+async function remindLineup(interaction) {
+    let failures = [], prompts = [];
+
+    if (!userIsCaptain(interaction.member) && !userIsCoach(interaction.member)) {
+        await sendFailure(interaction, "Only captains and coaches can use this command!");
+        return;
+    }
+
+    const week = currentSeason.current_week + 1;
+
+    const lineupQuery =
+        'SELECT slot, player.discord_snowflake AS playerSnowflake, matchup.rigged_count, team.discord_snowflake AS teamSnowflake FROM pairing \
+         INNER JOIN matchup ON pairing.matchup = matchup.id \
+         INNER JOIN week ON matchup.week = week.id \
+         INNER JOIN player ON pairing.left_player = player.id \
+         INNER JOIN team ON matchup.left_team = team.id \
+         WHERE matchup.left_team = (SELECT team FROM player WHERE discord_snowflake = ?) AND week.season = ? AND week.number = ? \
+         UNION \
+         SELECT slot, player.discord_snowflake AS playerSnowflake, matchup.rigged_count, team.discord_snowflake AS teamSnowflake FROM pairing \
+         INNER JOIN matchup ON pairing.matchup = matchup.id \
+         INNER JOIN week ON matchup.week = week.id \
+         INNER JOIN player ON pairing.right_player = player.id \
+         INNER JOIN team ON matchup.left_team = team.id \
+         WHERE matchup.right_team = (SELECT team FROM player WHERE discord_snowflake = ?) AND week.season = ? AND week.number = ? \
+         ORDER BY slot ASC';
+    const lineup = await db.all(lineupQuery, interaction.user.id, currentSeason.number, week, interaction.user.id, currentSeason.number, week);
+
+    if (lineup.length === 0) {
+        failures.push(`No lineup found for ${weekName(week)} for your team.`);
+    }
+
+    if (sendFailure(interaction, failures)) return;
+
+    const confirmLabel = 'Confirm lineup reminder';
+    const confirmMessage = `This is ${roleMention(lineup[0].teamSnowflake)}'s lineup for ${weekName(week)}:\n${lineup[0].rigged_count} rigged pairings.\n`.concat(lineup.map(player => userMention(player.playerSnowflake)).join('\n'));
+    const cancelMessage = 'No lineup reminder.';
+
+    await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage, true);
 }

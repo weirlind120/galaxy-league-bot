@@ -1,0 +1,58 @@
+import { db, channels } from '../globals.js';
+import { userMention, roleMention } from 'discord.js';
+
+export async function postScheduling(groupedPairings) {
+    const scheduleChannel = await channels.fetch(process.env.scheduleChannelId);
+
+    for (const pairingSet of groupedPairings.values()) {
+        await postSchedulingForMatchup(scheduleChannel, pairingSet);
+    }
+}
+
+async function postSchedulingForMatchup(scheduleChannel, pairingSet) {
+    let content = `${roleMention(pairingSet[0].leftTeamSnowflake)} vs ${roleMention(pairingSet[0].rightTeamSnowflake)} scheduled times:\n\n`.concat(
+        pairingSet.map(pairing => `${userMention(pairing.leftPlayerSnowflake)} vs ${userMention(pairing.rightPlayerSnowflake)}:`).join('\n')
+    );
+
+    const message = await scheduleChannel.send({
+        content: content,
+        allowedMentions: { parse: [] }
+    });
+
+    await saveScheduleMessage(message.id, pairingSet[0].matchup);
+}
+
+async function saveScheduleMessage(messageId, matchupId) {
+    await db.run('UPDATE matchup SET schedule_message = ? WHERE id = ?', messageId, matchupId);
+}
+
+export async function changeScheduledPlayer(scheduleMessageId, replacedPlayerSnowflake, newPlayerSnowflake) {
+    const scheduleMessage = await getScheduleMessage(scheduleMessageId);
+    const newScheduleMessage = scheduleMessage.content.replace(RegExp(`^(.*${replacedPlayerSnowflake}.*>:).*$`, 'm'), `$1`).replace(replacedPlayerSnowflake, newPlayerSnowflake);
+    await scheduleMessage.edit(newScheduleMessage);
+}
+
+async function getScheduleMessage(scheduleMessageId) {
+    const scheduleChannel = await channels.fetch(process.env.scheduleChannelId);
+    return await scheduleChannel.messages.fetch({ message: scheduleMessageId, force: true });
+}
+
+export async function setScheduledTime(playerSnowflake, season, week, newValue) {
+    const scheduleMessageId = (await getScheduleMessageId(season, week, playerSnowflake)).schedule_message;
+    const scheduleMessage = await getScheduleMessage(scheduleMessageId);
+    const newScheduleMessage = scheduleMessage.content.replace(RegExp(`^(.*${playerSnowflake}.*>:).*$`, 'm'), `$1 ${newValue}`);
+    await scheduleMessage.edit(newScheduleMessage);
+}
+
+async function getScheduleMessageId(season, week, playerSnowflake) {
+    const scheduleMessageQuery =
+        'SELECT schedule_message FROM matchup \
+         INNER JOIN week ON matchup.week = week.id \
+         WHERE week.season = ? AND week.number = ? AND matchup.left_team = (SELECT team FROM player WHERE player.discord_snowflake = ?) \
+         UNION \
+         SELECT schedule_message FROM matchup \
+         INNER JOIN week ON matchup.week = week.id \
+         WHERE week.season = ? AND week.number = ? AND matchup.right_team = (SELECT team FROM player WHERE player.discord_snowflake = ?)';
+
+    return await db.get(scheduleMessageQuery, season, week, playerSnowflake, season, week, playerSnowflake);
+}

@@ -3,8 +3,9 @@
     "",
     "\\bot",
     "\\bot\\commands",
+    "\\bot\\features",
     "\\database"
   ],
-  "SelectedNode": "\\bot\\commands\\season.js",
+  "SelectedNode": "\\bot\\features\\matchreports.js",
   "PreviewInSolutionExplorer": false
 }

@@ -1,9 +1,11 @@
 import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention, bold, codeBlock } from 'discord.js';
 import shuffle from 'lodash/shuffle.js';
-import { confirmAction, sendFailure, rightAlign } from './util.js';
+import { confirmAction, sendFailure, rightAlign, weekName } from './util.js';
 import { db, currentSeason, channels, mushiLeagueGuild, setCurrentSeason } from '../globals.js';
 import { commitLineup, getMatchupsMissingLineups } from './lineup.js';
 import { getOpenPairings } from './match.js';
+import { postPredictions, postPredictionStandings } from '../features/predictions.js';
+import { postScheduling } from '../features/schedule.js';
 
 export const SEASON_COMMAND = {
     data: new SlashCommandBuilder()
@@ -67,6 +69,7 @@ async function newSeason(interaction) {
         await updateStarRankings(currentSeason.number);
         await makeSeasonAndWeeks(currentSeason.number + 1, length, playoffSize);
         await makeRegSeasonPairings(currentSeason.number + 1, length);
+        await initStandings(currentSeason.number + 1);
 
         setCurrentSeason(db);
     }
@@ -115,6 +118,12 @@ function cycleTeams(teams) {
     }
 
     teams[teams.length - 1] = secondTeam;
+}
+
+async function initStandings(season) {
+    const standingsQuery = 'INSERT INTO standing (season, team) SELECT ?, id FROM team WHERE active = 1';
+
+    await db.run(standingsQuery, season);
 }
 
 async function calculateStandings(interaction) {
@@ -168,6 +177,8 @@ async function calculateStandings(interaction) {
         else {
             await advancePlayoffWinners(teamWins);
         }
+
+        await postPredictionStandings(currentSeason.number, nextStandingsWeek);
     }
 }
 
@@ -227,8 +238,8 @@ async function updateStandings(teamWins, nextStandingsWeek) {
             await db.run('UPDATE standing SET losses = losses + 1, battle_differential = battle_differential - ? WHERE season = ? AND team = ?', differential, currentSeason.number, matchup.rightId);
         }
         else if (differential < 0) {
-            await db.run('UPDATE standing SET wins = wins + 1, points = points + 3, battle_differential = battle_differential + ? WHERE season = ? AND team = ?', differential, currentSeason.number, matchup.rightId);
-            await db.run('UPDATE standing SET losses = losses + 1, battle_differential = battle_differential - ? WHERE season = ? AND team = ?', differential, currentSeason.number, matchup.leftId);
+            await db.run('UPDATE standing SET losses = losses + 1, battle_differential = battle_differential + ? WHERE season = ? AND team = ?', differential, currentSeason.number, matchup.leftId);
+            await db.run('UPDATE standing SET wins = wins + 1, points = points + 3, battle_differential = battle_differential - ? WHERE season = ? AND team = ?', differential, currentSeason.number, matchup.rightId);
         }
         else {
             await db.run('UPDATE standing SET ties = ties + 1, points = points + 1 WHERE season = ? AND (team = ? OR team = ?)', currentSeason.number, matchup.leftId, matchup.rightId);
@@ -414,22 +425,8 @@ async function updateMatchReportsHeader() {
     const oldHeader = (await matchReportChannel.messages.fetchPinned()).values().next().value;
     await matchReportChannel.messages.unpin(oldHeader.id);
 
-    const weekHeader = await matchReportChannel.send(bold(`----- ${weekName()} games -----`));
+    const weekHeader = await matchReportChannel.send(bold(`----- ${weekName(currentSeason.current_week)} games -----`));
     await matchReportChannel.messages.pin(weekHeader.id);
-}
-
-function weekName() {
-    if (currentSeason.current_week <= currentSeason.regular_weeks) {
-        return `Week ${currentSeason.current_week}`;
-    }
-
-    const totalWeeks = currentSeason.regular_weeks + Math.ceil(Math.log2(currentSeason.playoff_size));
-    switch (currentSeason.current_week) {
-        case totalWeeks: return 'Finals';
-        case totalWeeks - 1: return 'Semifinals';
-        case totalWeeks - 2: return 'Quarterfinals';
-        default: return 'go yell at jumpy to fix this';
-    }
 }
 
 async function createExtensionRooms(pairingsNeedingExtension) {
@@ -595,57 +592,3 @@ const rules = 'A few rules to remember:\n' +
               'We expect you to be helpful when scheduling with your opponent\n' +
               '\n' + 
               'GL HF!';
-
-async function postPredictions(groupedPairings) {
-    const predictionsChannel = await channels.fetch(process.env.predictionsChannelId);
-    for (const pairingSet of groupedPairings.values()) {
-        await postPredictionsForMatchup(predictionsChannel, pairingSet);
-    }
-}
-
-async function postPredictionsForMatchup(predictionsChannel, pairingSet) {
-    const headerMessage = `${pairingSet[0].leftEmoji} ${roleMention(pairingSet[0].leftTeamSnowflake)} vs ${roleMention(pairingSet[0].rightTeamSnowflake)} ${pairingSet[0].rightEmoji}\n \
-                                           Current score: 0-0`;
-    await sendPredictionMessage(predictionsChannel, headerMessage, pairingSet[0].leftEmoji, pairingSet[0].rightEmoji, pairingSet[0].matchup);
-
-    for (const pairing of pairingSet) {
-        const pairingMessage = `${userMention(pairing.leftPlayerSnowflake)} vs ${userMention(pairing.rightPlayerSnowflake)}`;
-        await sendPredictionMessage(predictionsChannel, pairingMessage, pairing.leftEmoji, pairing.rightEmoji, null, pairing.id);
-    }
-}
-
-async function sendPredictionMessage(predictionsChannel, content, leftEmoji, rightEmoji, matchupId, pairingId) {
-    const message = await predictionsChannel.send({
-        content: content,
-        allowedMentions: { parse: [] }
-    });
-    await message.react(leftEmoji);
-    await message.react(rightEmoji);
-    if (matchupId) {
-        await db.run('UPDATE matchup SET predictions_message = ? WHERE id = ?', message.id, matchupId);
-    }
-    if (pairingId) {
-        await db.run('UPDATE pairing SET predictions_message = ? WHERE id = ?', message.id, pairingId);
-    }
-}
-
-async function postScheduling(groupedPairings) {
-    const mainRoom = await channels.fetch(process.env.mainRoomId);
-
-    for (const pairingSet of groupedPairings.values()) {
-        await postSchedulingForMatchup(mainRoom, pairingSet);
-    }
-}
-
-async function postSchedulingForMatchup(mainRoom, pairingSet) {
-    let content = `${roleMention(pairingSet[0].leftTeamSnowflake)} vs ${roleMention(pairingSet[0].rightTeamSnowflake)} scheduled times:\n\n`.concat(
-        pairingSet.map(pairing => `${userMention(pairing.leftPlayerSnowflake)} vs ${userMention(pairing.rightPlayerSnowflake)}:`).join('\n')
-    );
-
-    const message = await mainRoom.send({
-        content: content,
-        allowedMentions: { parse: [] }
-    });
-        
-    await db.run('UPDATE matchup SET schedule_message = ? WHERE id = ?', message.id, pairingSet[0].matchup);
-}

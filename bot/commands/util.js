@@ -1,4 +1,5 @@
-import { ButtonBuilder, ActionRowBuilder, ButtonStyle } from 'discord.js';
+import { ButtonBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonStyle } from 'discord.js';
+import { currentSeason } from '../globals.js';
 
 export async function confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage, ephemeral, deferred) {
     if (!prompts || prompts.length === 0) {
@@ -6,7 +7,7 @@ export async function confirmAction(interaction, confirmLabel, prompts, confirmM
             await interaction.editReply(confirmMessage);
         }
         else {
-            await interaction.reply(confirmMessage);
+            await interaction.reply({ content: confirmMessage, ephemeral: ephemeral });
         }
         return true;
     }
@@ -46,7 +47,7 @@ export function sendFailure(interaction, failures, deferred) {
 
     if (failures) {
         if (deferred) {
-            interaction.editReply({ content: `Action FAILED:\n${failures}`, ephemeral: true });
+            interaction.editReply({ content: `Action FAILED:\n${failures}` });
         }
         else {
             interaction.reply({ content: `Action FAILED:\n${failures}`, ephemeral: true });
@@ -72,4 +73,30 @@ export function rightAlign(space, value) {
 
 export function fixFloat(float) {
     return +float.toFixed(2);
+}
+
+export function userIsMod(user) {
+    return user.permissions.has(PermissionFlagsBits.ManageChannels);
+}
+
+export function userIsCaptain(user) {
+    return user.roles.cache.has(process.env.captainRoleId);
+}
+
+export function userIsCoach(user) {
+    return user.roles.cache.has(process.env.captainRoleId);
+}
+
+export function weekName(week) {
+    if (week <= currentSeason.regular_weeks) {
+        return `Week ${week}`;
+    }
+
+    const totalWeeks = currentSeason.regular_weeks + Math.ceil(Math.log2(currentSeason.playoff_size));
+    switch (week) {
+        case totalWeeks: return 'Finals';
+        case totalWeeks - 1: return 'Semifinals';
+        case totalWeeks - 2: return 'Quarterfinals';
+        default: return 'go yell at jumpy to fix this';
+    }
 }

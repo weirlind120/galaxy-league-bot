@@ -1,5 +1,5 @@
 import { SlashCommandBuilder, roleMention, codeBlock } from 'discord.js';
-import { confirmAction, sendFailure, rightAlign, fixFloat } from './util.js'
+import { confirmAction, sendFailure, rightAlign, fixFloat, userIsCaptain, userIsCoach, userIsMod } from './util.js'
 import { db, currentSeason } from '../globals.js';
 
 export const DRAFT_COMMAND = {
@@ -22,14 +22,13 @@ export const DRAFT_COMMAND = {
                     option
                         .setName('player')
                         .setDescription('player to draft')
-                        .setRequired(true))),
+                        .setRequired(true)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('finalize')
+                .setDescription('saves rosters, initializes pstats')),
 
     async execute(interaction) {
-        if (!interaction.member.roles.cache.has(process.env.captainRoleId) && !interaction.member.roles.cache.has(process.env.coachRoleId)) {
-            await sendFailure(interaction, 'You must be a captain or coach to use this command.');
-            return;
-        }
-
         switch (interaction.options.getSubcommand()) {
             case 'list':
                 await listPlayers(interaction);
@@ -37,11 +36,19 @@ export const DRAFT_COMMAND = {
             case 'pick':
                 await pickPlayer(interaction);
                 break;
+            case 'finalize':
+                await finalizeDraft(interaction);
+                break;
         }
     }
 }
 
 async function listPlayers(interaction) {
+    if (!userIsCaptain(interaction.member) && !userIsCoach(interaction.member)) {
+        await sendFailure(interaction, 'You must be a captain or coach to use this command.');
+        return;
+    }
+
     const ephemeral = !interaction.options.getBoolean('public');
 
     const submitterQuery = 'SELECT player.id, team.id AS teamId, team.discord_snowflake AS teamSnowflake FROM player \
@@ -86,6 +93,11 @@ async function maxStarsNext(team) {
 }
 
 async function pickPlayer(interaction) {
+    if (!userIsCaptain(interaction.member) && !userIsCoach(interaction.member)) {
+        await sendFailure(interaction, 'You must be a captain or coach to use this command.');
+        return;
+    }
+
     let prompts = [], failures = [];
 
     const player = interaction.options.getMember('player');
@@ -126,5 +138,53 @@ async function pickPlayer(interaction) {
 
         await db.run('UPDATE player SET team = ?, role = role.id \
                       FROM role WHERE role.discord_snowflake = ? AND player.discord_snowflake = ?', submitter.teamId, process.env.playerRoleId, player.user.id);
+
+        await notifyOwnerIfAllPlayersDrafted();
     }
+}
+
+async function notifyOwnerIfAllPlayersDrafted() {
+    const availablePlayers = await db.all('SELECT name FROM player WHERE team IS NULL AND active = 1');
+
+    if (availablePlayers.length === 0) {
+        const draftChannel = await channels.fetch(process.env.draftChannelId);
+        await draftChannel.send({
+            content: `${roleMention(process.env.ownerRoleId)} all players have been drafted. After confirming the #registration channel has nobody left, run /draft finalize.`,
+            allowedMentions: { parse: ['roles'] }
+        });
+    }
+}
+
+async function finalizeDraft(interaction) {
+    if (!userIsMod(interaction.member)) {
+        await sendFailure(interaction, 'You must be a mod to use this command.');
+        return;
+    }
+
+    let prompts = [], failures = [];
+
+    const availablePlayers = (await db.all('SELECT name FROM player WHERE team IS NULL AND active = 1')).map(player => player.name).join(', ')
+
+    if (availablePlayers) {
+        prompts.push(`The following players are still undrafted: ${availablePlayers}`);
+    }
+
+    const confirmLabel = 'Confirm Draft Ending';
+    const confirmMessage = 'Draft concluded';
+    const cancelMessage = 'Draft not concluded';
+
+    if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage)) {
+        await saveRosters(currentSeason.number);
+        await initPstats(currentSeason.number);
+    }
+}
+
+async function saveRosters(season) {
+    const rosterQuery = 'INSERT INTO roster (season, team, player, role) SELECT ?, team, id, role FROM player WHERE team IS NOT NULL';
+    await db.run(rosterQuery, season);
+}
+
+async function initPstats(season) {
+    const pstatQuery = 'INSERT INTO pstat (player, season, stars) SELECT id, ?, stars FROM player WHERE team IS NOT NULL AND role != 3';
+    await db.run(pstatQuery, season);
 }

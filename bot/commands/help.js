@@ -1,4 +1,5 @@
 import { SlashCommandBuilder, bold, italic, PermissionFlagsBits } from 'discord.js';
+import { userIsCaptain, userIsCoach, userIsMod } from './util.js';
 
 export const HELP_COMMAND = {
     data: new SlashCommandBuilder()
@@ -11,37 +12,36 @@ export const HELP_COMMAND = {
             `\n${bold('Commands')}:` +
             '\n' +
             `\n${italic('public')}` +
-            `\n    ${bold('/match')}   commands to set the outcome of a match` +
+            `\n    ${bold('/match')}` +
             `\n        ${bold('schedule')}   adds a scheduled time to the main room` +
             `\n        ${bold('start')}   gives both players the role which bars them from #live-matches` +
             `\n        ${bold('link')}   links a game in #live-matches` +
             `\n        ${bold('report')}   reports the result of a played set` +
-            `\n    ${bold('/data')}   commands to pull data from mushi league history` +
+            `\n    ${bold('/data')}` +
             `\n        ${bold('scout')}   get a player's past replays` +
             `\n    ${bold('/help')}   ...this`;
 
-        if (interaction.member.roles.cache.some(role => role.name === 'Coach') ||
-            interaction.member.roles.cache.some(role => role.name === 'Captain')) {
+        if (userIsCaptain(interaction.member) || userIsCoach(interaction.member)) {
             helpText +=
                 '\n' +
                 `\n${italic('coach or captain only')}` +
-                `\n    ${bold('/draft')}   commands to manage draft` +
+                `\n    ${bold('/draft')}` +
                 `\n        ${bold('list')}   see all available players in star order` +
-                `\n        ${bold('pick')}   add an available player to your team`;
+                `\n        ${bold('pick')}   add an available player to your team`; +
+                `\n    ${bold('/lineup')}` +
+                `\n        ${bold('remind')}   see your lineup for next week`
         }
 
-        if (interaction.member.roles.cache.some(role => role.name === 'Coach') ||
-            interaction.member.roles.cache.some(role => role.name === 'Captain') ||
-            interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        if (userIsCaptain(interaction.member) || userIsCoach(interaction.member) || userIsMod(interaction.member)) {
             helpText +=
                 '\n' +
                 `\n${italic('mod, coach, or captain only')}` +
-                `\n    ${bold('/lineup')}   commands to manage lineups` +
+                `\n    ${bold('/lineup')}` +
                 `\n        ${bold('submit')}   submit a lineup for next week` +
                 `\n        ${bold('substitution')}   perform a substitution in the current week (or past week, for an extension)`;
         }
 
-        if (interaction.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        if (userIsMod(interaction.member)) {
             helpText +=
                 '\n' +
                 `\n${italic('mod only')}` +
@@ -51,7 +51,7 @@ export const HELP_COMMAND = {
                 `\n        ${bold('act')}   award an activity win` +
                 `\n        ${bold('dead')}   mark a match dead` +
                 `\n        ${bold('undo')}   undo a match report` +
-                `\n    ${bold('/player')}   commands to manage the player pool` +
+                `\n    ${bold('/player')}` +
                 `\n        ${bold('add')}   add a player to the player pool` +
                 `\n        ${bold('rate')}   give a player a star rating` +
                 `\n        ${bold('assign')}   assign a player to a team` +
@@ -64,9 +64,11 @@ export const HELP_COMMAND = {
             helpText +=
                 '\n' +
                 `\n${italic('admin only')}` +
-                `\n    ${bold('/season')}   powerful and difficult-to-reverse commands to advance the season` +
-                `\n        ${bold('new')}   start a new season: drop all players from teams, update star points, make round robin matchups` +
-                `\n        ${bold('next_week')}   start the next week: make new match rooms, post predictions, make extension rooms` +
+                `\n    ${bold('/draft')}` +
+                `\n        ${bold('finalize')}   initialize stat tracking for teams once they're finalized` +
+                `\n    ${bold('/season')}` +
+                `\n        ${bold('new')}   drop all players from teams, update star points, make round robin matchups` +
+                `\n        ${bold('next_week')}   make new match rooms, post predictions, make extension rooms` +
                 `\n        ${bold('calculate_standings')}   calculate the player and team standings after a week finishes, set up the next playoff round if applicable`;
         }
 
