@@ -1,5 +1,5 @@
 import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention, spoiler, italic, time, hyperlink, EmbedBuilder } from 'discord.js';
-import { confirmAction, sendFailure } from './util.js';
+import { confirmAction, sendFailure, baseHandler } from './util.js';
 import { db, currentSeason, channels, mushiLeagueGuild } from '../globals.js';
 import { set, parse, isValid, sub } from 'date-fns';
 import { savePredictions, updatePrediction, resetPredictionWinner } from '../features/predictions.js';
@@ -16,7 +16,7 @@ export const MATCH_COMMAND = {
                 .addStringOption(option =>
                     option
                         .setName('time')
-                        .setDescription('the scheduled time. Accepted formats: [Tuesday 11:00 PM], [Sunday 1 PM], [Wednesday 21:30]')
+                        .setDescription('the scheduled time. Accepted formats: "Tuesday 11:00 PM", "Sunday 1 PM", "Wednesday 21:30"')
                         .setRequired(true))
                 .addNumberOption(option =>
                     option
@@ -178,49 +178,54 @@ export const MATCH_COMMAND = {
 }
 
 async function scheduleMatch(interaction) {
-    let failures = [], prompts = [];
+    async function dataCollector(interaction) {
+        const date = interaction.options.getString('time');
+        const inexact = interaction.options.getBoolean('inexact');
+        const timezone = interaction.options.getNumber('timezone');
+        const player = interaction.options.getUser('player') || interaction.user;
+        const extension = interaction.options.getBoolean('extension');
+        const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
+        const pairing = await getPairingData(player.id, week, currentSeason.number);
 
-    const dateString = interaction.options.getString('time');
-    const inexact = interaction.options.getBoolean('inexact');
-    const timezone = interaction.options.getNumber('timezone');
-    let date = dateString;
+        let dateString = date;
 
-    if (!inexact && timezone == null) {
-        await sendFailure(interaction, 'You either need to specify that the time is inexact, or give a timezone');
-        return;
-    }
-
-    if (!inexact) {
-        const localDate = parseDateInput(dateString);
-
-        if (!localDate) {
-            await sendFailure(interaction, "Couldn't parse the date string. Please either specify that it's inexact, or pass it in formatted like [Sunday 4:00 PM], [Sunday 4 PM], or [Sunday 16:00]");
-            return;
+        if (!inexact) {
+            const localDate = parseDateInput(dateString);
+            const botTimezone = localDate.getTimezoneOffset() / -60;
+            dateString = time(sub(localDate, { hours: timezone - botTimezone }));
         }
 
-        const botTimezone = localDate.getTimezoneOffset() / -60;
-        date = time(sub(localDate, { hours: timezone - botTimezone }));
+        return { playerId: player.id, dateString, timezone, inexact, pairing, week };
     }
 
-    const player = interaction.options.getUser('player') || interaction.user;
-    const extension = interaction.options.getBoolean('extension');
-    const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
-    const pairing = await getPairingData(player.id, week, currentSeason.number);
+    function verifier(data) {
+        let failures = [], prompts = [];
+        const { playerId, dateString, timezone, inexact, pairing } = data;
 
-    if (!pairing) {
-        await sendFailure(interaction, `Could not find a match for ${userMention(player.id)} on the specified week`);
-        return;
+        if (!inexact && timezone == null) {
+            failures.push('You either need to specify that the time is inexact, or give a timezone');
+        }
+
+        if (!dateString) {
+            failures.push('Couldn\'t parse the date. Please either specify that it\'s inexact, or pass it in formatted like "Sunday 4:00 PM", "Sunday 4 PM", or "Sunday 16:00"');
+        }
+
+        if (!pairing) {
+            failures.push(`Couldn't find a game for ${userMention(data.playerId)} on the specified week`);
+        }
+
+        const confirmLabel = 'Confirm Schedule';
+        const confirmMessage = `${userMention(pairing.leftPlayerSnowflake)} and ${userMention(pairing.rightPlayerSnowflake)}'s game scheduled for ${dateString}`;
+        const cancelMessage = `Game schedule for ${userMention(playerId)} not changed.`;
+
+        return [failures, prompts, confirmLabel, confirmMessage, cancelMessage];
     }
 
-    if (sendFailure(interaction, failures)) return;
-
-    const confirmLabel = 'Confirm Schedule';
-    const confirmMessage = `${userMention(pairing.leftPlayerSnowflake)} and ${userMention(pairing.rightPlayerSnowflake)}'s game scheduled for ${date}`;
-    const cancelMessage = 'Game schedule not changed.';
-
-    if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage)) {
-        await setScheduledTime(player.id, currentSeason.number, week, date);
+    async function onConfirm(data) {
+        await setScheduledTime(data.playerId, currentSeason.number, data.week, data.dateString);
     }
+
+    await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
 }
 
 function parseDateInput(dateString) {

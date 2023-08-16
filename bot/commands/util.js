@@ -1,6 +1,24 @@
 import { ButtonBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonStyle } from 'discord.js';
 import { currentSeason } from '../globals.js';
 
+export async function baseHandler(interaction, dataCollector, verifier, onConfirm, ephemeral, deferred) {
+    if (deferred) {
+        await interaction.deferReply({ ephemeral: ephemeral });
+    }
+
+    const data = await dataCollector(interaction);
+
+    if (sendFailure(interaction, data.failure, deferred)) return;
+
+    const [failures, prompts, confirmLabel, confirmMessage, cancelMessage] = verifier(data);
+
+    if (sendFailure(interaction, failures, deferred)) return;
+
+    if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage, ephemeral, deferred)) {
+        await onConfirm(data);
+    }
+}
+
 export async function confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage, ephemeral, deferred) {
     if (!prompts || prompts.length === 0) {
         if (deferred) {
@@ -41,7 +59,7 @@ export async function confirmAction(interaction, confirmLabel, prompts, confirmM
 }
 
 export function sendFailure(interaction, failures, deferred) {
-    if (failures.constructor === Array) {
+    if (failures?.constructor === Array) {
         failures = failures.join('\n');
     }
 
