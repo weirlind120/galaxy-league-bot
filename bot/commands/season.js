@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention, bold, codeBlock } from 'discord.js';
 import shuffle from 'lodash/shuffle.js';
-import { confirmAction, sendFailure, rightAlign, weekName } from './util.js';
+import { confirmAction, sendFailure, rightAlign, weekName, baseHandler } from './util.js';
 import { db, currentSeason, channels, mushiLeagueGuild, setCurrentSeason } from '../globals.js';
 import { commitLineup, getMatchupsMissingLineups } from './lineup.js';
 import { getOpenPairings } from './match.js';
@@ -51,20 +51,27 @@ export const SEASON_COMMAND = {
 }
 
 async function newSeason(interaction) {
-    let prompts = [], failures = [];
+    async function dataCollector(interaction) {
+        const length = interaction.options.getNumber('length');
+        const playoffSize = interaction.options.getNumber('playoff_size');
 
-    const length = interaction.options.getNumber('length');
-    const playoffSize = interaction.options.getNumber('playoff_size');
+        return { length, playoffSize };
+    }
 
-    prompts.push('This will create a new season. ARE YOU SURE?');
+    function verifier(data) {
+        let prompts = [], failures = [];
 
-    if (sendFailure(interaction, failures)) return;
+        prompts.push('This will create a new season. ARE YOU SURE?');
 
-    const confirmLabel = 'Confirm new season';
-    const confirmMessage = 'New season begun.';
-    const cancelMessage = 'No new season begun.';
+        const confirmLabel = 'Confirm new season';
+        const confirmMessage = 'New season begun.';
+        const cancelMessage = 'No new season begun.';
 
-    if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage)) {
+        return [failures, prompts, confirmLabel, confirmMessage, cancelMessage];
+    }
+
+    async function onConfirm(data) {
+        const { length, playoffSize } = data;
         await dropAllPlayers();
         await updateStarRankings(currentSeason.number);
         await makeSeasonAndWeeks(currentSeason.number + 1, length, playoffSize);
@@ -73,6 +80,8 @@ async function newSeason(interaction) {
 
         setCurrentSeason(db);
     }
+
+    await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
 }
 
 async function dropAllPlayers() {
@@ -127,33 +136,43 @@ async function initStandings(season) {
 }
 
 async function calculateStandings(interaction) {
-    let prompts = [], failures = [];
+    async function dataCollector(interaction) {
+        const standingsSoFar = await db.get('SELECT wins + losses + ties AS standingsWeeks FROM standing WHERE season = ? LIMIT 1', currentSeason.number);
 
-    const standingsSoFar = await db.get('SELECT wins, losses, ties FROM standing WHERE season = ? LIMIT 1', currentSeason.number);
-    let nextStandingsWeek = standingsSoFar.wins + standingsSoFar.losses + standingsSoFar.ties + 1;
+        // because we stop updating standings for playoff, but you're never doing calculate_standings after next_week in playoff
+        const nextStandingsWeek =
+            standingsSoFar.standingsWeeks >= currentSeason.regular_weeks
+                ? currentSeason.current_week
+                : standingsSoFar.standingsWeeks + 1;
 
-    const pairingsNeedingExtension = await getOpenPairings(nextStandingsWeek);
+        const openPairings = await getOpenPairings(nextStandingsWeek);
 
-    // because we stop updating standings for playoff, but you're never doing calculate_standings after next_week in playoff
-    if (nextStandingsWeek >= currentSeason.regular_weeks) {
-        nextStandingsWeek = currentSeason.current_week;
+        return { nextStandingsWeek, openPairings };
     }
 
-    // known shortcoming: playoffs are held up until all matches finish, including ones with no effect on playoffs
-    if (pairingsNeedingExtension.length > 0) {
-        failures.push('There are unresolved games left in the week.');
+    function verifier(data) {
+        const { nextStandingsWeek, openPairings } = data;
+        let prompts = [], failures = [];
+
+        // known shortcoming: playoffs are held up until all matches finish, including ones with no effect on playoffs
+        if (openPairings.length > 0) {
+            failures.push('There are unresolved games left in the week.');
+        }
+
+        if (nextStandingsWeek >= currentSeason.regular_weeks) {
+            prompts.push('This will also ping captains to submit lineups for the next round of playoffs.');
+        }
+
+        const confirmLabel = 'Confirm update standings';
+        const confirmMessage = 'Standings updated.';
+        const cancelMessage = 'Standings not updated.';
+
+        return [failures, prompts, confirmLabel, confirmMessage, cancelMessage];
     }
-    if (nextStandingsWeek >= currentSeason.regular_weeks) {
-        prompts.push('This will also ping captains to submit lineups for the next round of playoffs.');
-    }
 
-    if (sendFailure(interaction, failures)) return;
+    async function onConfirm(data) {
+        const { nextStandingsWeek } = data;
 
-    const confirmLabel = 'Confirm update standings';
-    const confirmMessage = 'Standings updated.';
-    const cancelMessage = 'Standings not updated.';
-
-    if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage)) {
         const pairings = await getPairingResults(nextStandingsWeek);
         let teamWins = {};
 
@@ -164,7 +183,7 @@ async function calculateStandings(interaction) {
 
             await updatePlayerStats(pairing);
         };
-        
+
         if (nextStandingsWeek <= currentSeason.regular_weeks) {
             await updateStandings(teamWins, nextStandingsWeek);
             const standings = await getStandings();
@@ -180,6 +199,8 @@ async function calculateStandings(interaction) {
 
         await postPredictionStandings(currentSeason.number, nextStandingsWeek);
     }
+
+    await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
 }
 
 async function getPairingResults(nextStandingsWeek) {
@@ -379,28 +400,36 @@ async function makeWinnerRole(winner) {
 }
 
 async function nextWeek(interaction) {
-    let prompts = [], failures = [];
+    async function dataCollector(interaction) {
+        const pairingsNeedingExtension = await getOpenPairings(currentSeason.number, currentSeason.current_week);
+        const matchupsMissingLineups = await getMatchupsMissingLineups(currentSeason.number, currentSeason.current_week + 1);
 
-    const pairingsNeedingExtension = await getOpenPairings(currentSeason.number, currentSeason.current_week);
-    const matchupsMissingLineups = await getMatchupsMissingLineups(currentSeason.number, currentSeason.current_week + 1);
+        return { pairingsNeedingExtension, matchupsMissingLineups };
+    }
 
-    pairingsNeedingExtension.forEach(pairing => {
-        prompts.push(`(${roleMention(pairing.leftTeamSnowflake)}) ${userMention(pairing.leftPlayerSnowflake)} vs ${userMention(pairing.rightPlayerSnowflake)} (${roleMention(pairing.rightTeamSnowflake)}) will be granted an extension`);
-    });
+    function verifier(data) {
+        const { pairingsNeedingExtension, matchupsMissingLineups } = data;
+        let prompts = [], failures = [];
 
-    matchupsMissingLineups.forEach(matchup => {
-        prompts.push(`${roleMention(matchup.delinquentTeamSnowflake)} hasn't submitted their lineup yet`.concat(
-            matchup.rigged_count > 0 ? ' and their opponent said they were rigging pairings.' : ''
-        ));
-    });
+        pairingsNeedingExtension.forEach(pairing => {
+            prompts.push(`(${roleMention(pairing.leftTeamSnowflake)}) ${userMention(pairing.leftPlayerSnowflake)} vs ${userMention(pairing.rightPlayerSnowflake)} (${roleMention(pairing.rightTeamSnowflake)}) will be granted an extension`);
+        });
 
-    if (sendFailure(interaction, failures)) return;
+        matchupsMissingLineups.forEach(matchup => {
+            prompts.push(`${roleMention(matchup.delinquentTeamSnowflake)} hasn't submitted their lineup yet`.concat(
+                matchup.rigged_count > 0 ? ' and their opponent said they were rigging pairings.' : ''
+            ));
+        });
 
-    const confirmLabel = 'Confirm advance week';
-    const confirmMessage = 'New week begun.';
-    const cancelMessage = 'New week not begun.';
+        const confirmLabel = 'Confirm advance week';
+        const confirmMessage = 'New week begun.';
+        const cancelMessage = 'New week not begun.';
 
-    if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage)) {
+        return [failures, prompts, confirmLabel, confirmMessage, cancelMessage];
+    }
+
+    async function onConfirm(data) {
+        const { pairingsNeedingExtension, matchupsMissingLineups } = data;
         await advanceCurrentWeek();
         await updateMatchReportsHeader();
         await createExtensionRooms(pairingsNeedingExtension);
@@ -412,6 +441,8 @@ async function nextWeek(interaction) {
         await postPredictions(groupedPairings);
         await postScheduling(groupedPairings);
     }
+
+    await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
 }
 
 async function advanceCurrentWeek() {

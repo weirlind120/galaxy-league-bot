@@ -79,7 +79,7 @@ async function mapReactionsToPlayers(leftPlayer, leftEmoji, rightPlayer, rightEm
 }
 
 async function savePredictionsToDatabase(pairingId, predictions, leftPlayer, rightPlayer) {
-    let insertQuery = 'INSERT INTO predictions (pairing, predictor_snowflake, predicted_winner) VALUES\n';
+    let insertQuery = 'INSERT INTO prediction (pairing, predictor_snowflake, predicted_winner) VALUES\n';
 
     insertQuery = insertQuery.concat(
         predictions[leftPlayer].map(reacter => `(${pairingId}, ${reacter}, ${leftPlayer}),\n`).join(''),
@@ -173,7 +173,7 @@ export async function postPredictionStandings(season, week) {
 
 async function getCumulativeTopTenInPredictions(season, week) {
     const topTenQuery = 
-        'SELECT predictor_snowflake, count(predictor_snowflake) AS correctPredictions FROM predictions \
+        'SELECT predictor_snowflake, count(predictor_snowflake) AS correctPredictions FROM prediction \
          INNER JOIN pairing ON pairing = pairing.id \
          INNER JOIN matchup ON pairing.matchup = matchup.id \
          INNER JOIN week ON matchup.week = week.id \
@@ -186,7 +186,7 @@ async function getCumulativeTopTenInPredictions(season, week) {
 
 async function getWeeklyTopTenInPredictions(season, week) {
     const topTenQuery =
-        'SELECT predictor_snowflake, count(predictor_snowflake) AS correctPredictions FROM predictions \
+        'SELECT predictor_snowflake, count(predictor_snowflake) AS correctPredictions FROM prediction \
          INNER JOIN pairing ON pairing = pairing.id \
          INNER JOIN matchup ON pairing.matchup = matchup.id \
          INNER JOIN week ON matchup.week = week.id \

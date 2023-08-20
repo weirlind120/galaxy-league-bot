@@ -37,22 +37,8 @@ async function getScheduleMessage(scheduleMessageId) {
     return await scheduleChannel.messages.fetch({ message: scheduleMessageId, force: true });
 }
 
-export async function setScheduledTime(playerSnowflake, season, week, newValue) {
-    const scheduleMessageId = (await getScheduleMessageId(season, week, playerSnowflake)).schedule_message;
+export async function setScheduledTime(playerSnowflake, scheduleMessageId, newValue) {
     const scheduleMessage = await getScheduleMessage(scheduleMessageId);
     const newScheduleMessage = scheduleMessage.content.replace(RegExp(`^(.*${playerSnowflake}.*>:).*$`, 'm'), `$1 ${newValue}`);
     await scheduleMessage.edit(newScheduleMessage);
-}
-
-async function getScheduleMessageId(season, week, playerSnowflake) {
-    const scheduleMessageQuery =
-        'SELECT schedule_message FROM matchup \
-         INNER JOIN week ON matchup.week = week.id \
-         WHERE week.season = ? AND week.number = ? AND matchup.left_team = (SELECT team FROM player WHERE player.discord_snowflake = ?) \
-         UNION \
-         SELECT schedule_message FROM matchup \
-         INNER JOIN week ON matchup.week = week.id \
-         WHERE week.season = ? AND week.number = ? AND matchup.right_team = (SELECT team FROM player WHERE player.discord_snowflake = ?)';
-
-    return await db.get(scheduleMessageQuery, season, week, playerSnowflake, season, week, playerSnowflake);
 }
