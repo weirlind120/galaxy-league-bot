@@ -1,5 +1,5 @@
-import { SlashCommandBuilder, bold, italic, PermissionFlagsBits } from 'discord.js';
-import { userIsCaptain, userIsCoach, userIsMod } from './util.js';
+import { SlashCommandBuilder, bold, italic } from 'discord.js';
+import { userIsCaptain, userIsCoach, userIsMod, userIsOwner, baseFunctionlessHandler } from './util.js';
 
 export const HELP_COMMAND = {
     data: new SlashCommandBuilder()
@@ -7,7 +7,28 @@ export const HELP_COMMAND = {
         .setDescription('get a list of commands'),
 
     async execute(interaction) {
-        let helpText = 
+        await help(interaction);
+    }
+}
+
+async function help(interaction) {
+    async function dataCollector(interaction) {
+        return {
+            isCaptain: userIsCaptain(interaction.member),
+            isCoach: userIsCoach(interaction.member),
+            isMod: userIsMod(interaction.member),
+            isOwner: userIsOwner(interaction.member),
+        }
+    }
+
+    function verifier(data) {
+        return [];
+    }
+
+    function responseWriter(data) {
+        const { isCaptain, isCoach, isMod, isOwner } = data;
+
+        let helpText =
             '\u200b' +
             `\n${bold('Commands')}:` +
             '\n' +
@@ -21,7 +42,7 @@ export const HELP_COMMAND = {
             `\n        ${bold('scout')}   get a player's past replays` +
             `\n    ${bold('/help')}   ...this`;
 
-        if (userIsCaptain(interaction.member) || userIsCoach(interaction.member)) {
+        if (isCaptain || isCoach) {
             helpText +=
                 '\n' +
                 `\n${italic('coach or captain only')}` +
@@ -32,7 +53,7 @@ export const HELP_COMMAND = {
                 `\n        ${bold('remind')}   see your lineup for next week`
         }
 
-        if (userIsCaptain(interaction.member) || userIsCoach(interaction.member) || userIsMod(interaction.member)) {
+        if (isCaptain || isCoach || isMod) {
             helpText +=
                 '\n' +
                 `\n${italic('mod, coach, or captain only')}` +
@@ -41,7 +62,7 @@ export const HELP_COMMAND = {
                 `\n        ${bold('substitution')}   perform a substitution in the current week (or past week, for an extension)`;
         }
 
-        if (userIsMod(interaction.member)) {
+        if (isMod) {
             helpText +=
                 '\n' +
                 `\n${italic('mod only')}` +
@@ -60,7 +81,7 @@ export const HELP_COMMAND = {
                 `\n        ${bold('set_active')}   mark a player active (can be on a team)`;
         }
 
-        if (interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+        if (isOwner) {
             helpText +=
                 '\n' +
                 `\n${italic('admin only')}` +
@@ -72,6 +93,8 @@ export const HELP_COMMAND = {
                 `\n        ${bold('calculate_standings')}   calculate the player and team standings after a week finishes, set up the next playoff round if applicable`;
         }
 
-        await interaction.reply({ content: helpText, ephemeral: true });
+        return helpText;
     }
+
+    await baseFunctionlessHandler(interaction, dataCollector, verifier, responseWriter, true, false);
 }

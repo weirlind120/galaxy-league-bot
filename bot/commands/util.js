@@ -19,6 +19,29 @@ export async function baseHandler(interaction, dataCollector, verifier, onConfir
     }
 }
 
+export async function baseFunctionlessHandler(interaction, dataCollector, verifier, responseWriter, ephemeral, deferred) {
+    if (deferred) {
+        await interaction.deferReply({ ephemeral: ephemeral });
+    }
+
+    const data = await dataCollector(interaction);
+
+    if (sendFailure(interaction, data.failure, deferred)) return;
+
+    const failures = verifier(data);
+
+    if (sendFailure(interaction, failures, deferred)) return;
+
+    const response = responseWriter(data);
+
+    if (deferred) {
+        await interaction.editReply(response);
+    }
+    else {
+        await interaction.reply({ content: response, ephemeral: ephemeral });
+    }
+}
+
 export async function confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage, ephemeral, deferred) {
     if (!prompts || prompts.length === 0) {
         if (deferred) {
@@ -91,6 +114,10 @@ export function rightAlign(space, value) {
 
 export function fixFloat(float) {
     return +float.toFixed(2);
+}
+
+export function userIsOwner(user) {
+    return user.permissions.has(PermissionFlagsBits.ManageGuild);
 }
 
 export function userIsMod(user) {

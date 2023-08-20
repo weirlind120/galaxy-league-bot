@@ -1,5 +1,5 @@
-import { SlashCommandBuilder, roleMention, codeBlock } from 'discord.js';
-import { confirmAction, sendFailure, rightAlign, fixFloat, userIsCaptain, userIsCoach, userIsMod } from './util.js'
+import { SlashCommandBuilder, roleMention, codeBlock, userMention } from 'discord.js';
+import { confirmAction, sendFailure, rightAlign, fixFloat, userIsCaptain, userIsCoach, userIsOwner, baseFunctionlessHandler, baseHandler } from './util.js'
 import { db, currentSeason } from '../globals.js';
 
 export const DRAFT_COMMAND = {
@@ -44,23 +44,34 @@ export const DRAFT_COMMAND = {
 }
 
 async function listPlayers(interaction) {
-    if (!userIsCaptain(interaction.member) && !userIsCoach(interaction.member)) {
-        await sendFailure(interaction, 'You must be a captain or coach to use this command.');
-        return;
-    }
-
     const ephemeral = !interaction.options.getBoolean('public');
 
-    const submitterQuery = 'SELECT player.id, team.id AS teamId, team.discord_snowflake AS teamSnowflake FROM player \
-                            INNER JOIN team ON team.id = player.team \
-                            WHERE player.discord_snowflake = ?'
-    const submitter = await db.get(submitterQuery, interaction.user.id);
+    async function dataCollector(interaction) {
+        const teamQuery = 
+            'SELECT team.id, team.discord_snowflake FROM player \
+             INNER JOIN team ON team.id = player.team \
+             WHERE player.discord_snowflake = ?'
+        const team = await db.get(teamQuery, interaction.user.id);
 
-    const maxStars = fixFloat(await maxStarsNext(submitter.teamId));
-    const availablePlayers = await db.all('SELECT name, stars FROM player WHERE team IS NULL AND active = 1 AND stars <= ? ORDER BY stars DESC', maxStars);
-    const message = prettyDraftList(availablePlayers);
+        if (!team) {
+            return { failure: 'You must be on a team to use this command.' };
+        }
 
-    await interaction.reply({ content: message, ephemeral: ephemeral });
+        const maxStars = fixFloat(await maxStarsNext(team.id));
+
+        const availablePlayers = await db.all('SELECT name, stars FROM player WHERE team IS NULL AND active = 1 AND stars <= ? ORDER BY stars DESC', maxStars);
+
+        return { teamSnowflake: team.discord_snowflake, maxStars, availablePlayers };
+    }
+
+    function verifier(data) { }
+
+    function responseWriter(data) {
+        const { teamSnowflake, maxStars, availablePlayers } = data;
+        return `Players available to ${roleMention(teamSnowflake)} (max stars for next pick: ${maxStars}):\n`.concat(prettyDraftList(availablePlayers));
+    }
+
+    await baseFunctionlessHandler(interaction, dataCollector, verifier, responseWriter, ephemeral, false);
 }
 
 function prettyDraftList(availablePlayers) {
@@ -93,54 +104,65 @@ async function maxStarsNext(team) {
 }
 
 async function pickPlayer(interaction) {
-    if (!userIsCaptain(interaction.member) && !userIsCoach(interaction.member)) {
-        await sendFailure(interaction, 'You must be a captain or coach to use this command.');
-        return;
+    async function dataCollector(interaction) {
+        if (!userIsCaptain(interaction.member) && !userIsCoach(interaction.member)) {
+            return { failure: 'You must be a captain or coach to use this command.' };
+        }
+
+        const player = interaction.options.getMember('player');
+
+        const teamQuery = 
+            'SELECT team.id, discord_snowflake FROM player \
+             INNER JOIN team ON team.id = player.team \
+             WHERE player.discord_snowflake = ?'
+        const team = await db.get(teamQuery, interaction.user.id);
+
+        if (!team) {
+            return { failure: 'You must be on a team to use this command.' };
+        }
+
+        const maxStars = fixFloat(await maxStarsNext(team.id));
+        let playerData = await db.get('SELECT discord_snowflake, stars, team, active FROM player WHERE discord_snowflake = ?', player.id);
+        playerData.stars = fixFloat(playerData.stars);
+
+        return { team, maxStars, pick: playerData };
     }
 
-    let prompts = [], failures = [];
+    function verifier(data) {
+        const { team, maxStars, pick } = data;
+        let failures = [], prompts = [];
 
-    const player = interaction.options.getMember('player');
+        if (pick.team !== null) {
+            failures.push(`${userMention(pick.discord_snowflake)} is already on a team!`);
+        }
 
-    const submitterQuery = 'SELECT player.id, team.id AS teamId, team.discord_snowflake AS teamSnowflake FROM player \
-                            INNER JOIN team ON team.id = player.team \
-                            WHERE player.discord_snowflake = ?'
-    const submitter = await db.get(submitterQuery, interaction.user.id);
+        if (!pick.active) {
+            failures.push(`${userMention(pick.discord_snowflake)} is not playing this season!`);
+        }
 
-    const maxStars = fixFloat(await maxStarsNext(submitter.teamId));
-    let playerData = await db.get('SELECT stars, team, active FROM player WHERE discord_snowflake = ?', player.user.id);
-    playerData.stars = fixFloat(playerData.stars);
+        if (pick.stars > maxStars) {
+            failures.push(`${userMention(pick.discord_snowflake)} is too expensive! Your budget: ${maxStars} stars.`);
+        }
 
-    if (playerData.team !== null) {
-        failures.push(`${player} is already on a team!`);
+        prompts.push(`Confirm that you want to draft ${userMention(pick.discord_snowflake)} for ${pick.stars} stars.`);
+
+        const confirmLabel = 'Confirm Draft';
+        const confirmMessage = `${userMention(pick.discord_snowflake)} drafted to ${roleMention(team.discord_snowflake)} for ${pick.stars} stars.`;
+        const cancelMessage = `${userMention(pick.discord_snowflake)} not drafted.`;
+
+        return [failures, prompts, confirmLabel, confirmMessage, cancelMessage];
     }
-    if (!playerData.active) {
-        failures.push(`${player} is not playing this season!`);
-    }
-    if (playerData.stars > maxStars) {
-        failures.push(`${player} is too expensive! Your budget: ${maxStars} stars.`);
-    }
-    prompts.push(`Confirm that you want to draft ${player} for ${playerData.stars} stars.`);
 
-    if (sendFailure(interaction, failures)) return;
+    async function onConfirm(data) {
+        const { team, pick } = data;
 
-    const confirmLabel = 'Confirm Draft';
-    const confirmMessage = `${player} drafted to ${roleMention(submitter.teamSnowflake)} for ${playerData.stars}.`;
-    const cancelMessage = `${player} not drafted.`;
+        await db.run('UPDATE player SET team = ?, role = 1 WHERE role.discord_snowflake = ? AND player.discord_snowflake = ?', team.id, pick.discord_snowflake);
 
-    if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage)) {
-        let roles = [...player.roles.cache.keys()];
-
-        roles.push(process.env.playerRoleId);
-        roles.push(submitter.teamSnowflake);
-
-        player.roles.set(roles);
-
-        await db.run('UPDATE player SET team = ?, role = role.id \
-                      FROM role WHERE role.discord_snowflake = ? AND player.discord_snowflake = ?', submitter.teamId, process.env.playerRoleId, player.user.id);
-
+        await pick.roles.add([process.env.playerRoleId, team.discord_snowflake]);
         await notifyOwnerIfAllPlayersDrafted();
     }
+
+    await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
 }
 
 async function notifyOwnerIfAllPlayersDrafted() {
@@ -156,27 +178,37 @@ async function notifyOwnerIfAllPlayersDrafted() {
 }
 
 async function finalizeDraft(interaction) {
-    if (!userIsMod(interaction.member)) {
-        await sendFailure(interaction, 'You must be a mod to use this command.');
-        return;
+    async function dataCollector(interaction) {
+        if (!userIsOwner(interaction.member)) {
+            return { failure: 'You must be an owner to use this command.' };
+        }
+
+        const availablePlayers = await db.all('SELECT discord_snowflake FROM player WHERE team IS NULL AND active = 1');
+
+        return { availablePlayers };
     }
 
-    let prompts = [], failures = [];
+    function verifier(data) {
+        const { availablePlayers } = data;
+        let prompts = [], failures = [];
 
-    const availablePlayers = (await db.all('SELECT name FROM player WHERE team IS NULL AND active = 1')).map(player => player.name).join(', ')
+        if (availablePlayers.length) {
+            prompts.push(`The following players are still undrafted:\n${availablePlayers.map(player => userMention(player.discord_snowflake)).join('\n')}`);
+        }
 
-    if (availablePlayers) {
-        prompts.push(`The following players are still undrafted: ${availablePlayers}`);
+        const confirmLabel = 'Confirm Draft Ending';
+        const confirmMessage = 'Draft concluded';
+        const cancelMessage = 'Draft not concluded';
+
+        return [failures, prompts, confirmLabel, confirmMessage, cancelMessage];
     }
 
-    const confirmLabel = 'Confirm Draft Ending';
-    const confirmMessage = 'Draft concluded';
-    const cancelMessage = 'Draft not concluded';
-
-    if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage)) {
+    async function onConfirm(data) {
         await saveRosters(currentSeason.number);
         await initPstats(currentSeason.number);
     }
+
+    await baseHandler(interaction, dataCollector, verifier, onConfirm, true, false);
 }
 
 async function saveRosters(season) {

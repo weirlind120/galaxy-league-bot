@@ -1,5 +1,6 @@
-import { SlashCommandBuilder } from "discord.js";
+import { SlashCommandBuilder, italic, userMention } from "discord.js";
 import { currentSeason, db } from "../globals.js";
+import { baseFunctionlessHandler } from "./util.js";
 
 export const DATA_COMMAND = {
     data: new SlashCommandBuilder()
@@ -33,28 +34,48 @@ export const DATA_COMMAND = {
 }
 
 async function scoutPlayer(interaction) {
-    await interaction.deferReply({ ephemeral: true });
+    async function dataCollector(interaction) {
+        const player = interaction.options.getUser('player');
+        const startSeason = interaction.options.getNumber('from_season') || 0;
+        const endSeason = interaction.options.getNumber('through_season') || currentSeason.number;
 
-    const player = interaction.options.getUser('player');
-    const startSeason = interaction.options.getNumber('from_season') || 0;
-    const endSeason = interaction.options.getNumber('through_season') || currentSeason.number;
+        const replayQuery =
+            'SELECT pairing.game1, pairing.game2, pairing.game3, pairing.game4, pairing.game5 FROM pairing \
+             INNER JOIN matchup ON pairing.matchup = matchup.id \
+             INNER JOIN week ON matchup.week = week.id \
+             WHERE week.season >= ? AND week.season <= ? AND pairing.game1 IS NOT NULL \
+                AND (pairing.left_player = (SELECT id FROM player WHERE discord_snowflake = ?) OR \
+                    pairing.right_player = (SELECT id FROM player WHERE discord_snowflake = ?)) \
+             ORDER BY week.season DESC, week.number DESC';
 
-    const replayQuery =
-        'SELECT pairing.game1, pairing.game2, pairing.game3, pairing.game4, pairing.game5 FROM pairing \
-         INNER JOIN matchup ON pairing.matchup = matchup.id \
-         INNER JOIN week ON matchup.week = week.id \
-         WHERE week.season >= ? AND week.season <= ? AND pairing.game1 IS NOT NULL \
-             AND (pairing.left_player = (SELECT id FROM player WHERE discord_snowflake = ?) OR \
-                  pairing.right_player = (SELECT id FROM player WHERE discord_snowflake = ?)) \
-         ORDER BY week.season DESC, week.number DESC';
+        const replaysByWeek = await db.all(replayQuery, startSeason, endSeason, player.id, player.id);
+        const replays = replaysByWeek.flatMap(week => [week.game1, week.game2, week.game3, week.game4, week.game5]).filter(game => !!game);
 
-    const replays = await db.all(replayQuery, startSeason, endSeason, player.id, player.id);
+        return { playerSnowflake: player.id, startSeason, endSeason, replays };
+    }
 
-    const allReplaysString = `Replays found for ${player} between seasons ${startSeason} and ${endSeason}:\n`.concat(
-        replays.length > 0
-            ? replays.flatMap(week => [week.game1, week.game2, week.game3, week.game4, week.game5]).filter(game => !!game).join('\n')
-            : 'None :('
-    );
+    function verifier(data) {
+        const { playerSnowflake, startSeason, endSeason, replays } = data;
+        let failures = [];
 
-    await interaction.editReply({ content: allReplaysString, ephemeral: true });
+        if (startSeason > endSeason) {
+            failures.push(`You asked for replays ${italic('after')} season ${startSeason} but ${italic('before')} season ${endSeason}. Obviously there are none.`);
+        }
+
+        if (replays.length === 0) {
+            failures.push(`No replays found for ${userMention(playerSnowflake)} between seasons ${startSeason} and ${endSeason}.`)
+        }
+
+        return failures;
+    }
+
+    function responseWriter(data) {
+        const { playerSnowflake, startSeason, endSeason, replays } = data;
+
+        return `Replays found for ${userMention(playerSnowflake)} between seasons ${startSeason} and ${endSeason}:\n`.concat(
+            replays.join('\n')
+        );
+    }
+
+    await baseFunctionlessHandler(interaction, dataCollector, verifier, responseWriter, true, true);
 }
