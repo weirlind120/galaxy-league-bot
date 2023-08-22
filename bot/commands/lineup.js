@@ -178,13 +178,13 @@ async function submitLineup(interaction) {
              ORDER BY stars DESC';
         const roster = await db.all(rosterQuery, teamSnowflake);
 
-        lineup = lineupOption.map(player => roster.find(p => p.discord_snowflake === player.id) ?? { discord_snowflake: player.user.id });
+        const lineup = lineupOption.map(player => roster.find(p => p.discord_snowflake === player.id) ?? { discord_snowflake: player.user.id });
 
-        return { isMod: userIsMod(interaction.member), submitter, teamSnowflake, riggedCount, clear, lineup, roster };
+        return { isMod: userIsMod(interaction.member), submitter, teamSnowflake, matchup, riggedCount, clear, lineup, roster };
     }
 
     function verifier(data) {
-        const { isMod, teamSnowflake, riggedCount, clear, lineup, roster } = data;
+        const { isMod, teamSnowflake, matchup, riggedCount, clear, lineup, roster } = data;
         let failures = [], prompts = [];
 
         if (matchup.rigged_count !== null && matchup.rigged_count !== riggedCount && !clear) {

@@ -1,5 +1,5 @@
-import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention, spoiler, italic, time, hyperlink, EmbedBuilder } from 'discord.js';
-import { sendFailure, baseHandler } from './util.js';
+import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention, spoiler, italic, time, hyperlink, EmbedBuilder, channelMention } from 'discord.js';
+import { sendFailure, baseHandler, userIsMod } from './util.js';
 import { db, currentSeason, channels, mushiLeagueGuild } from '../globals.js';
 import { set, parse, isValid, sub, add } from 'date-fns';
 import { savePredictions, updatePrediction, resetPredictionWinner } from '../features/predictions.js';
@@ -39,7 +39,7 @@ export const MATCH_COMMAND = {
         .addSubcommand(subcommand =>
             subcommand
                 .setName('start')
-                .setDescription('when players have begun their bo3 (locks them out of live-matches until /match report)')
+                .setDescription(`when players have begun their bo3 (locks them out of ${channelMention(process.env.liveMatchesChannelId)} until /match report)`)
                 .addUserOption(option => 
                     option
                         .setName('player')
@@ -55,7 +55,7 @@ export const MATCH_COMMAND = {
         .addSubcommand(subcommand =>
             subcommand
                 .setName('link')
-                .setDescription('links a game in live-matches')
+                .setDescription(`links a game in ${channelMention(process.env.liveMatchesChannelId)}`)
                 .addStringOption(option =>
                     option
                         .setName('game_link')
@@ -288,12 +288,12 @@ async function startMatch(interaction) {
         }
 
         if (eitherPlayerIsOwner) {
-            prompts.push('One of the players in this match is a server admin, so neither player can be blocked from #live-matches');
+            prompts.push(`One of the players in this match is a server admin, so neither player can be blocked from ${channelMention(process.env.liveMatchesChannelId)}`);
         }
 
         const confirmLabel = 'Confirm Start Match';
         const confirmMessage = `Match begun between ${player} and ${opponent}.`.concat(
-            eitherPlayerIsOwner ? '\nOne of the players in this match is a server admin, so neither player can be blocked from #live-matches.' : ''
+            eitherPlayerIsOwner ? `\nOne of the players in this match is a server admin, so neither player can be blocked from ${channelMention(process.env.liveMatchesChannelId)}.` : ''
         );
         const cancelMessage = 'No match begun.';
 
@@ -325,8 +325,11 @@ async function linkMatch(interaction) {
         const player = interaction.member;
         const ping = (number === 1);
         const pairing = await getPairingData(player.id, week, currentSeason.number);
+        const matchRoom = pairing
+            ? await channels.fetch(eval(`process.env.matchChannel${pairing.room}Id`))
+            : undefined;
 
-        return { gameLink, ping, number, player, pairing };
+        return { gameLink, ping, number, player, pairing, matchRoom };
     }
 
     function verifier(data) {
@@ -334,11 +337,11 @@ async function linkMatch(interaction) {
         let failures = [], prompts = [];
 
         if (!player.roles.cache.has(process.env.currentlyPlayingRoleId)) {
-            failures.push("You're not barred from #live-matches! Link it yourself, you bum.");
+            failures.push(`You're not barred from ${channelMention(process.env.liveMatchesChannelId)}! Link it yourself, you bum.`);
         }
 
         const confirmLabel = 'Confirm Link Game';
-        const confirmMessage = 'Game linked in #live-matches';
+        const confirmMessage = `Game linked in ${channelMention(process.env.liveMatchesChannelId)}`;
         const cancelMessage = 'Game not linked';
 
         return [failures, prompts, confirmLabel, confirmMessage, cancelMessage];
@@ -347,17 +350,21 @@ async function linkMatch(interaction) {
     async function onConfirm(data) {
         const { gameLink, number, ping, pairing } = data;
 
-        const linkMessage = gameLink.concat(
-            ` ${userMention(pairing.leftPlayerSnowflake)} vs ${userMention(pairing.rightPlayerSnowflake)}`,
-            number ? ` game ${number}` : '',
+        const leftPlayerText = `(${roleMention(pairing.leftTeamSnowflake)}) ${userMention(pairing.leftPlayerSnowflake)}`;
+        const rightPlayerText = `${userMention(pairing.rightPlayerSnowflake)} (${roleMention(pairing.rightTeamSnowflake)})`;
+
+        const linkMessage = `${gameLink} ${leftPlayerText} vs ${rightPlayerText} game ${number}`.concat(
             ping ? ` ${roleMention(process.env.spectatorRoleId)}` : ''
         );
 
         const liveMatchesChannel = await channels.fetch(process.env.liveMatchesChannelId);
         await liveMatchesChannel.send({
             content: linkMessage,
-            allowedMentions: { parse: ['roles'] }
+            allowedMentions: { roles: [process.env.spectatorRoleId] }
         });
+
+        const matchChannel = await channels.fetch(eval(`process.env.matchChannel${pairing.room}Id`));
+        await matchChannel.send(linkMessage);
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
@@ -416,6 +423,10 @@ async function reportMatch(interaction) {
         await db.run(`UPDATE pairing SET winner = ?, game1 = ?, game2 = ?, game3 = ?, game4 = ?, game5 = ?, dead = NULL WHERE id = ?`,
             winnerId, games[0], games[1], games.at(2), games.at(3), games.at(4), pairing.id);
 
+        if (!pairing.predictionsSaved) {
+            await savePredictions(pairing.id, pairing.leftPlayerId, pairing.leftEmoji, pairing.rightPlayerId, pairing.rightEmoji, pairing.predictions_message);
+        }
+
         await postReport(pairing, winnerOnLeft, extension, games);
         await removePlayingRole(pairing.leftPlayerSnowflake, pairing.rightPlayerSnowflake);
         await updatePrediction(pairing.predictions_message, pairing.matchupPrediction, false, false, winnerOnLeft);
@@ -426,7 +437,7 @@ async function reportMatch(interaction) {
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
 }
 
-async function awardActWin(interaction, userIsMod) {
+async function awardActWin(interaction) {
     async function dataCollector(interaction) {
         if (!userIsMod(interaction.member)) {
             return { failure: 'Only mods can use this command' };
@@ -481,7 +492,7 @@ async function awardActWin(interaction, userIsMod) {
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
 }
 
-async function markDeadGame(interaction, userIsMod) {
+async function markDeadGame(interaction) {
     async function dataCollector(interaction) {
         if (!userIsMod(interaction.member)) {
             return { failure: 'Only mods can use this command' };
@@ -551,25 +562,26 @@ async function postReport(pairing, winnerOnLeft, extension, games, act, dead) {
 function makeReportPlaintext(pairing, winnerOnLeft, extension, games, act, dead) {
     const leftPlayerText = `(${roleMention(pairing.leftTeamSnowflake)}) ${userMention(pairing.leftPlayerSnowflake)}`;
     const rightPlayerText = `${userMention(pairing.rightPlayerSnowflake)} (${roleMention(pairing.rightTeamSnowflake)})`;
-    const winnerText = spoiler(winnerOnLeft ? '>' : '<');
     const extensionMessage = extension ? italic('\n(Extension from last week)') : '';
 
-    let matchReportHeader = '', links = [];
-    if (games) {
-        matchReportHeader = `${leftPlayerText} ${winnerText} ${rightPlayerText}`;
-
-        for (let i = 0; i < Math.max(games.length, 3); i++) {
-            links.push(hyperlink(`\ngame ${i + 1}`, games.at(i) || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'));
-        }
-    }
     if (act) {
-        matchReportHeader = `${leftPlayerText} ${winnerText} ${rightPlayerText} on activity.`;
+        const winnerText = winnerOnLeft ? '>' : '<';
+        return `${leftPlayerText} ${winnerText} ${rightPlayerText} on activity.` + extensionMessage;
     }
     if (dead) {
-        matchReportHeader = `${leftPlayerText} vs ${rightPlayerText} marked dead.`;
+        return `${leftPlayerText} vs ${rightPlayerText} marked dead.` + extensionMessage;
     }
 
-    return matchReportHeader.concat(links.join(''), extensionMessage);
+    const winnerText = games.length === 2
+        ? winnerOnLeft ? '\u{0032}\u{FE0F}\u{20E3} > \u{0030}\u{FE0F}\u{20E3}' : '\u{0030}\u{FE0F}\u{20E3} < \u{0032}\u{FE0F}\u{20E3}'
+        : winnerOnLeft ? '\u{0032}\u{FE0F}\u{20E3} > \u{0031}\u{FE0F}\u{20E3}' : '\u{0031}\u{FE0F}\u{20E3} < \u{0032}\u{FE0F}\u{20E3}';
+    const matchReportHeader = `${leftPlayerText} ${spoiler(winnerText)} ${rightPlayerText}`;
+    let links = games.map((game, i) => hyperlink(`\ngame ${i + 1}`, game));
+    if (links.length === 2) {
+        links[3] = hyperlink(`\ngame ${i + 1}`, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+    }
+
+    return matchReportHeader + links.join('') + extensionMessage;
 }
 
 function makeReplayEmbed(pairing, winnerOnLeft, extension, games) {
@@ -581,7 +593,9 @@ function makeReplayEmbed(pairing, winnerOnLeft, extension, games) {
 
     const leftPlayerText = `(${roleMention(pairing.leftTeamSnowflake)}) ${userMention(pairing.leftPlayerSnowflake)}`;
     const rightPlayerText = `${userMention(pairing.rightPlayerSnowflake)} (${roleMention(pairing.rightTeamSnowflake)})`;
-    const winnerText = spoiler(winnerOnLeft ? '>' : '<');
+    const winnerText = games.length === 2
+        ? winnerOnLeft ? '\u{0032}\u{FE0F}\u{20E3} > \u{0030}\u{FE0F}\u{20E3}' : '\u{0030}\u{FE0F}\u{20E3} < \u{0032}\u{FE0F}\u{20E3}'
+        : winnerOnLeft ? '\u{0032}\u{FE0F}\u{20E3} > \u{0031}\u{FE0F}\u{20E3}' : '\u{0031}\u{FE0F}\u{20E3} < \u{0032}\u{FE0F}\u{20E3}';
     const extensionMessage = extension ? italic('\n(Extension from last week)') : '';
 
     return new EmbedBuilder()
@@ -649,7 +663,7 @@ async function undoReport(interaction) {
 async function getPairingData(playerSnowflake, week, season) {
     const pairingQuery = 
         'SELECT pairing.id, pairing.winner, pairing.dead, pairing.slot, pairing.predictions_message, \
-         matchup.predictions_message AS matchupPrediction, matchup.schedule_message, (predictedPairings.pairing IS NOT NULL) AS predictionsSaved, \
+         matchup.predictions_message AS matchupPrediction, matchup.schedule_message, matchup.room, (predictedPairings.pairing IS NOT NULL) AS predictionsSaved, \
          leftPlayer.id AS leftPlayerId, leftPlayer.discord_snowflake AS leftPlayerSnowflake, leftTeam.discord_snowflake AS leftTeamSnowflake, leftTeam.emoji AS leftEmoji, \
          rightPlayer.id AS rightPlayerId, rightPlayer.discord_snowflake AS rightPlayerSnowflake, rightTeam.discord_snowflake AS rightTeamSnowflake, rightTeam.emoji AS rightEmoji FROM pairing \
          INNER JOIN player AS leftPlayer ON leftPlayer.id = pairing.left_player \

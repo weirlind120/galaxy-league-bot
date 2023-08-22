@@ -1,7 +1,7 @@
 import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention, bold, codeBlock } from 'discord.js';
 import { db, channels, currentSeason } from '../globals.js';
 import { rightAlign } from './util.js';
-import { savePredictions, changePredictionsPlayer, postPredictions, postPredictionStandings } from '../features/predictions.js';
+import { savePredictions, updatePrediction, changePredictionsPlayer, postPredictions, postPredictionStandings } from '../features/predictions.js';
 import { setScheduledTime, changeScheduledPlayer, postScheduling } from '../features/schedule.js';
 
 export const TEST_COMMAND = {
@@ -13,6 +13,6 @@ export const TEST_COMMAND = {
     async execute(interaction) {
         await interaction.reply({ content: 'done', ephemeral: true });
 
-        await postPredictionStandings(14, 1, 6, 4);
+        await savePredictions(280, 149, '<:slaking:884271827365556294>', 137, '<:wooperscooper:767415316388773929>', '1138287558418243706');
     }
 }
