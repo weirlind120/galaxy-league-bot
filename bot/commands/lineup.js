@@ -353,7 +353,7 @@ async function substitutePlayer(interaction) {
              INNER JOIN team ON team.id = player.team \
              INNER JOIN role ON role.id = player.role \
              WHERE (player.discord_snowflake = ? OR player.discord_snowflake = ?)`;
-        const players = await db.all(playersQuery, matchup.id, replacedPlayer.user.id, newPlayer.id);
+        const players = await db.all(playersQuery, matchup.id, replacedPlayer.id, newPlayer.id);
 
         if (players.length !== 2) {
             return { failure: `Could not find both ${replacedPlayer} and ${newPlayer} in the player pool.` };
@@ -377,25 +377,25 @@ async function substitutePlayer(interaction) {
             failures.push(`You're subbing out ${userMention(replacedPlayer.discord_snowflake)} but their match has already been decided. Get a mod to use /match undo if this sub is legit.`);
         }
 
-        if (newPlayerData.slot) {
+        if (newPlayer.slot) {
             failures.push(`You're subbing in ${userMention(newPlayer.discord_snowflake)}, but they're already playing in slot ${newPlayer.slot}.`);
         }
 
-        if (newPlayerData.teamSnowflake !== replacedPlayerData.teamSnowflake) {
+        if (newPlayer.teamSnowflake !== replacedPlayer.teamSnowflake) {
             failures.push(`You're subbing in ${userMention(newPlayer.discord_snowflake)} over ${userMention(replacedPlayer.discord_snowflake)}, but they're on different teams.\n` +
                           `${userMention(replacedPlayer.discord_snowflake)} is on the ${roleMention(replacedPlayer.teamSnowflake)}\n` +
                           `${userMention(newPlayer.discord_snowflake)} is on the ${roleMention(newPlayer.teamSnowflake)}`);
         }
 
-        if (newPlayerData.roleName === 'Coach') {
+        if (newPlayer.roleName === 'Coach') {
             failures.push(`You're subbing in ${userMention(newPlayer.discord_snowflake)}, but they're a coach and can't play.`);
         }
 
-        if ((fixFloat(newPlayerData.stars) - fixFloat(replacedPlayerData.stars)) > 0.7) {
+        if ((fixFloat(newPlayer.stars) - fixFloat(replacedPlayer.stars)) > 0.7) {
             addModOverrideableFailure(isMod, failures, prompts, `You're subbing in ${userMention(newPlayer.discord_snowflake)} over ${userMention(replacedPlayer.discord_snowflake)}, but the star rules don't permit that.`);
         }
 
-        if (!interaction.member.roles.cache.has(replacedPlayerData.teamSnowflake)) {
+        if (!interaction.member.roles.cache.has(replacedPlayer.teamSnowflake)) {
             addModOverrideableFailure(isMod, failures, prompts, `You're subbing out ${userMention(replacedPlayer.discord_snowflake)}, who is on the ${roleMention(replacedPlayer.teamSnowflake)}, but you aren't on that team.`);
         }
 
