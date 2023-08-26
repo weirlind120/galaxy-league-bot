@@ -353,18 +353,20 @@ async function linkMatch(interaction) {
         const leftPlayerText = `(${roleMention(pairing.leftTeamSnowflake)}) ${userMention(pairing.leftPlayerSnowflake)}`;
         const rightPlayerText = `${userMention(pairing.rightPlayerSnowflake)} (${roleMention(pairing.rightTeamSnowflake)})`;
 
-        const linkMessage = `${gameLink} ${leftPlayerText} vs ${rightPlayerText} game ${number}`.concat(
-            ping ? ` ${roleMention(process.env.spectatorRoleId)}` : ''
-        );
+        const linkMessage = `${gameLink} ${leftPlayerText} vs ${rightPlayerText} game ${number}`;
+        const linkMessageWithPing = linkMessage + ` ${roleMention(process.env.spectatorRoleId)}`;
 
         const liveMatchesChannel = await channels.fetch(process.env.liveMatchesChannelId);
         await liveMatchesChannel.send({
-            content: linkMessage,
+            content: ping ? linkMessageWithPing : linkMessage,
             allowedMentions: { roles: [process.env.spectatorRoleId] }
         });
 
         const matchChannel = await channels.fetch(eval(`process.env.matchChannel${pairing.room}Id`));
-        await matchChannel.send(linkMessage);
+        await matchChannel.send({
+            content: linkMessage,
+            allowedMentions: { parse: [] }
+        });
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
@@ -599,7 +601,7 @@ function makeReplayEmbed(pairing, winnerOnLeft, extension, games) {
     const extensionMessage = extension ? italic('\n(Extension from last week)') : '';
 
     return new EmbedBuilder()
-        .setDescription(`${leftPlayerText} ${winnerText} ${rightPlayerText}${extensionMessage}`)
+        .setDescription(`${leftPlayerText} ${spoiler(winnerText)} ${rightPlayerText}${extensionMessage}`)
         .addFields(...gameFields);
 }
 
