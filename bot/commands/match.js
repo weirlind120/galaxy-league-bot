@@ -1,9 +1,10 @@
-import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention, spoiler, italic, time, hyperlink, EmbedBuilder, channelMention } from 'discord.js';
-import { sendFailure, baseHandler, userIsMod } from './util.js';
-import { db, currentSeason, channels, mushiLeagueGuild } from '../globals.js';
+import { SlashCommandBuilder, roleMention, userMention, spoiler, italic, time, hyperlink, EmbedBuilder, channelMention } from 'discord.js';
+import { baseHandler, userIsMod } from './util.js';
+import { currentSeason, channels, mushiLeagueGuild } from '../globals.js';
 import { set, parse, isValid, sub, add } from 'date-fns';
 import { savePredictions, updatePrediction, resetPredictionWinner } from '../features/predictions.js';
 import { setScheduledTime } from '../features/schedule.js';
+import { savePairingResult, loadOnePairing, loadOpenPairings } from '../../database/pairing.js';
 
 export const MATCH_COMMAND = {
     data: new SlashCommandBuilder()
@@ -181,7 +182,7 @@ async function scheduleMatch(interaction) {
         const extension = interaction.options.getBoolean('extension');
 
         const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
-        const pairing = await getPairingData(player.id, week, currentSeason.number);
+        const pairing = await loadOnePairing(currentSeason.number, week, player.id);
 
         if (!pairing) {
             return { failure: `No pairing found for ${player}. Is this a Mushi League match?` };
@@ -256,7 +257,7 @@ async function startMatch(interaction) {
 
         const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
 
-        const pairing = await getPairingData(player.user.id, week, currentSeason.number);
+        const pairing = await loadOnePairing(currentSeason.number, week, player.id);
 
         if (pairing && !opponent) {
             const opponentSnowflake = pairing.leftPlayerSnowflake === player.user.id
@@ -324,7 +325,7 @@ async function linkMatch(interaction) {
         const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
         const player = interaction.member;
         const ping = (number === 1);
-        const pairing = await getPairingData(player.id, week, currentSeason.number);
+        const pairing = await loadOnePairing(currentSeason.number, week, player.id);
         const matchRoom = pairing
             ? await channels.fetch(eval(`process.env.matchChannel${pairing.room}Id`))
             : undefined;
@@ -385,7 +386,7 @@ async function reportMatch(interaction) {
         const extension = interaction.options.getBoolean('extension');
         const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
 
-        const pairing = await getPairingData(winner.id, week, currentSeason.number);
+        const pairing = await loadOnePairing(currentSeason.number, week, winner.id);
 
         if (!pairing) {
             return { failure: `No pairing found for ${winner}. Is this a Mushi League match?` };
@@ -422,8 +423,7 @@ async function reportMatch(interaction) {
         const { games, extension, week, pairing, winnerOnLeft } = data;
 
         const winnerId = winnerOnLeft ? pairing.leftPlayerId : pairing.rightPlayerId;
-        await db.run(`UPDATE pairing SET winner = ?, game1 = ?, game2 = ?, game3 = ?, game4 = ?, game5 = ?, dead = NULL WHERE id = ?`,
-            winnerId, games[0], games[1], games.at(2), games.at(3), games.at(4), pairing.id);
+        await savePairingResult(pairing.id, games, winnerId, null);
 
         if (!pairing.predictionsSaved) {
             await savePredictions(pairing.id, pairing.leftPlayerId, pairing.leftEmoji, pairing.rightPlayerId, pairing.rightEmoji, pairing.predictions_message);
@@ -450,7 +450,7 @@ async function awardActWin(interaction) {
 
         const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
 
-        const pairing = await getPairingData(winner.id, week, currentSeason.number);
+        const pairing = await loadOnePairing(currentSeason.number, week, winner.id);
 
         if (!pairing) {
             return { failure: `No pairing found for ${winner}. Is this a Mushi League match?` };
@@ -462,7 +462,7 @@ async function awardActWin(interaction) {
     }
 
     function verifier(data) {
-        const { pairing } = data;
+        const { pairing, winnerOnLeft } = data;
         let failures = [], prompts = [];
 
         if (pairing.winner || pairing.dead) {
@@ -483,7 +483,7 @@ async function awardActWin(interaction) {
         const { extension, week, pairing, winnerOnLeft } = data;
 
         const winnerId = winnerOnLeft ? pairing.leftPlayerId : pairing.rightPlayerId;
-        await db.run(`UPDATE pairing SET winner = ?, game1 = NULL, game2 = NULL, game3 = NULL, game4 = NULL, game5 = NULL, dead = NULL WHERE id = ?`, winnerId, pairing.id);
+        await savePairingResult(pairing.id, null, winnerId, null);
 
         await postReport(pairing, winnerOnLeft, extension, null, true, false);
         await updatePrediction(pairing.predictions_message, pairing.matchupPrediction, true, false, winnerOnLeft);
@@ -505,7 +505,7 @@ async function markDeadGame(interaction) {
 
         const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
 
-        const pairing = await getPairingData(player.id, week, currentSeason.number);
+        const pairing = await loadOnePairing(currentSeason.number, week, player.id);
 
         if (!pairing) {
             return { failure: `No pairing found for ${player}. Is this a Mushi League match?` };
@@ -532,7 +532,7 @@ async function markDeadGame(interaction) {
     async function onConfirm(data) {
         const { extension, week, pairing } = data;
 
-        await db.run(`UPDATE pairing SET winner = NULL, game1 = NULL, game2 = NULL, game3 = NULL, game4 = NULL, game5 = NULL, dead = 1 WHERE id = ?`, pairing.id);
+        await savePairingResult(pairing.id, null, null, 1);
 
         await postReport(pairing, null, extension, null, false, true);
         await updatePrediction(pairing.predictions_message, pairing.matchupPrediction, false, true);
@@ -626,7 +626,7 @@ async function undoReport(interaction) {
 
         const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
 
-        const pairing = await getPairingData(player.id, week, currentSeason.number);
+        const pairing = await loadOnePairing(currentSeason.number, week, player.id);
 
         if (!pairing) {
             return { failure: `No pairing found for ${player}. Is this a Mushi League match?` };
@@ -652,7 +652,7 @@ async function undoReport(interaction) {
 
     async function onConfirm(data) {
         const { pairing } = data;
-        await db.run('UPDATE pairing SET game1 = NULL, game2 = NULL, game3 = NULL, game4 = NULL, game5 = NULL, winner = NULL, dead = NULL WHERE id = ?', pairing.id);
+        await savePairingResult(pairing.id, null, null, null, null, null, null, null);
 
         await resetPredictionWinner(pairing.predictions_message, pairing.matchupPrediction, pairing.winner === pairing.leftPlayerId,
             pairing.dead, pairing.leftPlayerSnowflake, pairing.rightPlayerSnowflake);
@@ -662,41 +662,8 @@ async function undoReport(interaction) {
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
 }
 
-async function getPairingData(playerSnowflake, week, season) {
-    const pairingQuery = 
-        'SELECT pairing.id, pairing.winner, pairing.dead, pairing.slot, pairing.predictions_message, \
-         matchup.predictions_message AS matchupPrediction, matchup.schedule_message, matchup.room, (predictedPairings.pairing IS NOT NULL) AS predictionsSaved, \
-         leftPlayer.id AS leftPlayerId, leftPlayer.discord_snowflake AS leftPlayerSnowflake, leftTeam.discord_snowflake AS leftTeamSnowflake, leftTeam.emoji AS leftEmoji, \
-         rightPlayer.id AS rightPlayerId, rightPlayer.discord_snowflake AS rightPlayerSnowflake, rightTeam.discord_snowflake AS rightTeamSnowflake, rightTeam.emoji AS rightEmoji FROM pairing \
-         INNER JOIN player AS leftPlayer ON leftPlayer.id = pairing.left_player \
-         INNER JOIN team AS leftTeam ON leftTeam.id = leftPlayer.team \
-         INNER JOIN player AS rightPlayer ON rightPlayer.id = pairing.right_player \
-         INNER JOIN team AS rightTeam ON rightTeam.id = rightPlayer.team \
-         INNER JOIN matchup ON matchup.id = pairing.matchup \
-         INNER JOIN week ON week.id = matchup.week \
-         LEFT JOIN (SELECT DISTINCT pairing FROM prediction) AS predictedPairings ON pairing.id = predictedPairings.pairing \
-         WHERE (rightPlayer.discord_snowflake = ? OR leftPlayer.discord_snowflake = ?) \
-             AND week.number = ? AND week.season = ?';
-
-    return await db.get(pairingQuery, playerSnowflake, playerSnowflake, week, season);
-}
-
-export async function getOpenPairings(season, week) {
-    const openPairingsQuery =
-        'SELECT leftPlayer.discord_snowflake AS leftPlayerSnowflake, leftTeam.discord_snowflake AS leftTeamSnowflake, \
-                rightPlayer.discord_snowflake AS rightPlayerSnowflake, rightTeam.discord_snowflake AS rightTeamSnowflake, pairing.matchup FROM pairing \
-         INNER JOIN player AS leftPlayer ON leftPlayer.id = pairing.left_player \
-         INNER JOIN player AS rightPlayer ON rightPlayer.id = pairing.right_player \
-         INNER JOIN team AS leftTeam ON leftTeam.id = leftPlayer.team \
-         INNER JOIN team AS rightTeam ON rightTeam.id = rightPlayer.team \
-         INNER JOIN matchup ON matchup.id = pairing.matchup \
-         INNER JOIN week ON week.id = matchup.week \
-         WHERE pairing.winner IS NULL AND pairing.dead IS NULL AND week.season = ? AND week.number = ?';
-    return await db.all(openPairingsQuery, season, week);
-}
-
 async function notifyOwnersIfAllMatchesDone(week) {
-    if ((await getOpenPairings(currentSeason.number, week)).length === 0) {
+    if ((await loadOpenPairings(currentSeason.number, week)).length === 0) {
         const captainChannel = await channels.fetch(process.env.captainChannelId);
         await captainChannel.send({
             content: `${roleMention(process.env.ownerRoleId)} all matches are in -- run /season calculate_standings when you've confirmed.`,

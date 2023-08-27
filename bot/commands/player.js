@@ -1,6 +1,9 @@
 import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention } from 'discord.js';
-import { confirmAction, baseHandler } from './util.js';
-import { db } from '../globals.js';
+import { baseHandler } from './util.js';
+
+import { loadPlayerFromSnowflake, saveNewPlayer, savePlayerChange, loadExistingLeader } from '../../database/player.js';
+import { loadTeamFromSnowflake } from '../../database/team.js';
+import { loadRoleFromSnowflake } from '../../database/role.js';
 
 export const PLAYER_COMMAND = {
     data: new SlashCommandBuilder()
@@ -134,7 +137,7 @@ async function addPlayer(interaction) {
         const name = interaction.options.getString('name');
         const stars = interaction.options.getNumber('stars');
 
-        const existingPlayer = await db.get('SELECT id FROM player WHERE discord_snowflake = ?', player.id);
+        const existingPlayer = await loadPlayerFromSnowflake(player.id);
 
         return { playerSnowflake: player.id, name, stars, existingPlayer };
     }
@@ -157,7 +160,7 @@ async function addPlayer(interaction) {
     }
 
     async function onConfirm(data) {
-        await db.run(`INSERT INTO player (name, discord_snowflake, stars) VALUES (?, ?, ?)`, data.name, data.playerSnowflake, data.stars);
+        await saveNewPlayer(data.playerSnowflake, data.name, data.stars);
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
@@ -168,32 +171,33 @@ async function renamePlayer(interaction) {
         const player = interaction.options.getUser('player');
         const name = interaction.options.getString('new_name');
 
-        const existingPlayer = await db.get('SELECT name FROM player WHERE discord_snowflake = ?', player.id);
+        const existingPlayer = await loadPlayerFromSnowflake(player.id);
 
         if (!existingPlayer) {
             return { failure: `${player} is not in the pool; use /player add instead` };
         }
 
-        return { playerSnowflake: player.id, name, existingPlayerName: existingPlayer.name };
+        return { playerSnowflake: player.id, name, existingPlayer };
     }
 
     function verifier(data) {
-        const { playerSnowflake, name, existingPlayerName } = data;
+        const { playerSnowflake, name, existingPlayer } = data;
         let failures = [], prompts = [];
 
-        if (existingPlayerName === name) {
+        if (existingPlayer.name === name) {
             failures.push(`${userMention(playerSnowflake)} is already named ${name}`);
         }
 
         const confirmLabel = 'Confirm Rename Player';
-        const confirmMessage = `${userMention(playerSnowflake)} renamed from ${existingPlayerName} to ${name}.`;
-        const cancelMessage = `${userMention(playerSnowflake)} not renamed from ${existingPlayerName}.`;
+        const confirmMessage = `${userMention(playerSnowflake)} renamed from ${existingPlayer.name} to ${name}.`;
+        const cancelMessage = `${userMention(playerSnowflake)} not renamed from ${existingPlayer.name}.`;
 
         return [failures, prompts, confirmLabel, confirmMessage, cancelMessage];
     }
 
     async function onConfirm(data) {
-        await db.run(`UPDATE player SET name = ? WHERE discord_snowflake = ?`, data.name, data.playerSnowflake);
+        const { playerSnowflake, name, existingPlayer } = data;
+        await savePlayerChange(playerSnowflake, name, existingPlayer.stars, existingPlayer.teamId, existingPlayer.roleId, existingPlayer.active);
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
@@ -204,25 +208,25 @@ async function ratePlayer(interaction) {
         const player = interaction.options.getUser('player');
         const stars = interaction.options.getNumber('stars');
 
-        const existingPlayer = await db.get('SELECT id, stars FROM player WHERE discord_snowflake = ?', player.id);
+        const existingPlayer = await loadPlayerFromSnowflake(player.id);
 
         if (!existingPlayer) {
             return { failure: `${player} is not in the pool; use /player add instead` };
         }
 
-        return { playerSnowflake: player.id, stars, existingPlayerStars: existingPlayer.stars };
+        return { playerSnowflake: player.id, stars, existingPlayer };
     }
 
     function verifier(data) {
-        const { playerSnowflake, stars, existingPlayerStars } = data;
+        const { playerSnowflake, stars, existingPlayer } = data;
         let failures = [], prompts = [];
 
-        if (existingPlayerStars === stars) {
+        if (existingPlayer.stars === stars) {
             failures.push(`${userMention(playerSnowflake)} is already rated ${stars}.`);
         }
 
-        if (existingPlayerStars && existingPlayer.stars !== stars) {
-            prompts.push(`${userMention(playerSnowflake)} is already rated ${existingPlayerStars}. Do you want to change their rating to ${stars}?`);
+        if (existingPlayer.stars && existingPlayer.stars !== stars) {
+            prompts.push(`${userMention(playerSnowflake)} is already rated ${existingPlayer.stars}. Do you want to change their rating to ${stars}?`);
         }
 
         const confirmLabel = 'Confirm Rating Change';
@@ -233,7 +237,8 @@ async function ratePlayer(interaction) {
     }
 
     async function onConfirm(data) {
-        await db.run(`UPDATE player SET stars = ? WHERE discord_snowflake = ?`, data.stars, data.playerSnowflake);
+        const { playerSnowflake, stars, existingPlayer } = data;
+        await savePlayerChange(playerSnowflake, existingPlayer.name, stars, existingPlayer.teamId, existingPlayer.roleId, existingPlayer.active);
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
@@ -245,24 +250,14 @@ async function assignPlayer(interaction) {
         const newTeam = interaction.options.getRole('team');
         const newRole = interaction.options.getRole('role');
 
-        const existingPlayerQuery =
-            'SELECT player.id, player.stars, role.discord_snowflake AS roleSnowflake, role.name AS roleName, team.discord_snowflake AS teamSnowflake FROM player \
-             LEFT JOIN team ON team.id = player.team \
-             LEFT JOIN role ON role.id = player.role \
-             WHERE player.discord_snowflake = ?';
-        const existingPlayer = await db.get(existingPlayerQuery, player.id);
+        const existingPlayer = await loadPlayerFromSnowflake(player.id);
 
         if (!existingPlayer) {
             return { failure: `${player} is not in the pool; use /player add first.` };
         }
 
-        const existingLeaderQuery =
-            'SELECT player.discord_snowflake FROM player \
-             INNER JOIN team ON team.id = player.team \
-             INNER JOIN role ON role.id = player.role \
-             WHERE team.discord_snowflake = ? AND role.discord_snowflake = ?';
-        const existingLeader = (newRole.name === "Captain" || newRole.name === "Coach")
-            ? await db.get(existingLeaderQuery, newTeam.id, newRole.id)
+        const existingLeader = (newRole.name === 'Captain' || newRole.name === 'Coach')
+            ? await loadExistingLeader(newTeam.id, newRole.id)
             : null;
 
         return { player, newTeam, newRole, existingPlayer, existingLeader };
@@ -276,7 +271,7 @@ async function assignPlayer(interaction) {
             failures.push(`${player} is already assigned to ${newTeam} as a ${newRole}`);
         }
 
-        if (existingPlayer.stars === null && newRole.name !== "Coach") {
+        if (existingPlayer.stars === null && newRole.name !== 'Coach') {
             failures.push(`${player} needs a star rating before being made a ${newRole}. Use /player rate.`);
         }
 
@@ -314,41 +309,19 @@ async function assignPlayer(interaction) {
 
         player.roles.set(roles);
 
-        await db.run('UPDATE player SET team = team.id, role = role.id \
-                      FROM team, role WHERE team.discord_snowflake = ? AND role.discord_snowflake = ? AND player.discord_snowflake = ?', newTeam.id, newRole.id, player.id);
+        const newTeamId = (await loadTeamFromSnowflake(newTeam.id)).id;
+        const newRoleId = (await loadRoleFromSnowflake(newRole.id)).id;
+        await savePlayerChange(player.id, existingPlayer.name, existingPlayer.stars, newTeamId, newRoleId, existingPlayer.active);
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
-
-    const confirmLabel = 'Confirm Player Assignment';
-    const confirmMessage = `${player.user} added to ${newTeam} as a ${newRole}.`;
-    const cancelMessage = `${player.user}'s team assignment not changed.`;
-
-    if (await confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage)) {
-        let roles = [...player.roles.cache.keys()];
-
-        roles = roles.filter(role => role !== existingPlayer.roleSnowflake && role !== existingPlayer.teamSnowflake);
-
-        roles.push(newRole.id);
-        roles.push(newTeam.id);
-
-        player.roles.set(roles);
-
-        await db.run('UPDATE player SET team = team.id, role = role.id \
-                      FROM team, role WHERE team.discord_snowflake = ? AND role.discord_snowflake = ? AND player.discord_snowflake = ?', newTeam.id, newRole.id, player.id);
-    }
 }
 
 async function dropPlayer(interaction) {
     async function dataCollector(interaction) {
         const player = interaction.options.getMember('player');
 
-        const existingPlayerQuery = 
-            'SELECT player.id, role.name AS roleName, role.discord_snowflake AS roleSnowflake, team.discord_snowflake AS teamSnowflake FROM player \
-             LEFT JOIN team ON team.id = player.team \
-             LEFT JOIN role ON role.id = player.role \
-             WHERE player.discord_snowflake = ?';
-        const existingPlayer = await db.get(existingPlayerQuery, player.id);
+        const existingPlayer = await loadPlayerFromSnowflake(player.id);
 
         if (!existingPlayer) {
             return { failure: `${player} is not in the pool.` };
@@ -379,7 +352,7 @@ async function dropPlayer(interaction) {
     async function onConfirm(data) {
         const { player, existingPlayer } = data;
 
-        await db.run('UPDATE player SET role = NULL, team = NULL WHERE discord_snowflake = ?', player.id);
+        await savePlayerChange(player.id, existingPlayer.name, existingPlayer.stars, null, null, existingPlayer.active);
         player.roles.remove([existingPlayer.roleSnowflake, existingPlayer.teamSnowflake]);
     }
 
@@ -390,12 +363,7 @@ async function setPlayerInactive(interaction) {
     async function dataCollector(interaction) {
         const player = interaction.options.getMember('player');
 
-        const existingPlayerQuery = 
-            'SELECT player.id, role.name AS roleName, role.discord_snowflake AS roleSnowflake, team.discord_snowflake AS teamSnowflake FROM player \
-             LEFT JOIN team ON team.id = player.team \
-             LEFT JOIN role ON role.id = player.role \
-             WHERE player.discord_snowflake = ?';
-        const existingPlayer = await db.get(existingPlayerQuery, player.id);
+        const existingPlayer = await loadPlayerFromSnowflake(player.id);
 
         if (!existingPlayer) {
             return { failure: `${player} is not in the pool.` };
@@ -427,7 +395,7 @@ async function setPlayerInactive(interaction) {
 
     async function onConfirm(data) {
         const { player, existingPlayer } = data;
-        await db.run('UPDATE player SET role = NULL, team = NULL, active = 0 WHERE discord_snowflake = ?', player.id);
+        await savePlayerChange(player.id, existingPlayer.name, existingPlayer.stars, null, null, 0);
 
         if (existingPlayer.teamSnowflake) {
             player.roles.remove([existingPlayer.roleSnowflake, existingPlayer.teamSnowflake]);
@@ -441,7 +409,7 @@ async function setPlayerActive(interaction) {
     async function dataCollector(interaction) {
         const player = interaction.options.getUser('player');
 
-        const existingPlayer = await db.get('SELECT id, active FROM player WHERE player.discord_snowflake = ?', player.id);
+        const existingPlayer = await loadPlayerFromSnowflake(player.id);
 
         if (!existingPlayer) {
             return { failure: `${player} is not in the pool; use /player add instead.` };
@@ -462,7 +430,8 @@ async function setPlayerActive(interaction) {
     }
 
     async function onConfirm(data) {
-        await db.run('UPDATE player SET active = 1 WHERE discord_snowflake = ?', data.playerSnowflake);
+        const { playerSnowflake, existingPlayer } = data;
+        await savePlayerChange(playerSnowflake, existingPlayer.name, existingPlayer.stars, existingPlayer.team, existingPlayer.role, 1);
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);

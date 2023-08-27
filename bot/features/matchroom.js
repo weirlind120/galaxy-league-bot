@@ -1,2 +1,2 @@
-import { channels, db } from '../globals.js';
+import { channels } from '../globals.js';
 

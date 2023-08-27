@@ -1,4 +1,5 @@
-import { db, channels } from '../globals.js';
+import { channels } from '../globals.js';
+import { saveScheduleMessageId } from '../../database/matchup.js';
 import { userMention, roleMention } from 'discord.js';
 
 export async function postScheduling(groupedPairings) {
@@ -19,11 +20,7 @@ async function postSchedulingForMatchup(scheduleChannel, pairingSet) {
         allowedMentions: { parse: [] }
     });
 
-    await saveScheduleMessage(message.id, pairingSet[0].matchup);
-}
-
-async function saveScheduleMessage(messageId, matchupId) {
-    await db.run('UPDATE matchup SET schedule_message = ? WHERE id = ?', messageId, matchupId);
+    await saveScheduleMessageId(message.id, pairingSet[0].matchup);
 }
 
 export async function changeScheduledPlayer(scheduleMessageId, replacedPlayerSnowflake, newPlayerSnowflake) {

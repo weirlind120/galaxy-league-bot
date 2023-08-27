@@ -1,5 +1,6 @@
 import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention, bold, codeBlock } from 'discord.js';
-import { db, channels, currentSeason } from '../globals.js';
+import { channels, currentSeason } from '../globals.js';
+import { db } from '../../database/database.js';
 import { rightAlign } from './util.js';
 import { savePredictions, updatePrediction, changePredictionsPlayer, postPredictions, postPredictionStandings } from '../features/predictions.js';
 import { setScheduledTime, changeScheduledPlayer, postScheduling } from '../features/schedule.js';

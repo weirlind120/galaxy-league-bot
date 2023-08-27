@@ -1,11 +1,22 @@
 import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention, bold, codeBlock } from 'discord.js';
 import shuffle from 'lodash/shuffle.js';
-import { confirmAction, sendFailure, rightAlign, weekName, baseHandler } from './util.js';
-import { db, currentSeason, channels, mushiLeagueGuild, setCurrentSeason } from '../globals.js';
-import { commitLineup, getMatchupsMissingLineups } from './lineup.js';
-import { getOpenPairings } from './match.js';
+
+import { rightAlign, weekName, baseHandler } from './util.js';
+import { commitLineup } from './lineup.js';
+
+import { currentSeason, channels, mushiLeagueGuild, setCurrentSeason } from '../globals.js';
+
 import { postPredictions, postPredictionStandings } from '../features/predictions.js';
 import { postScheduling } from '../features/schedule.js';
+
+import { saveNewSeason, saveAdvanceWeek } from '../../database/season.js';
+import { saveNewWeeks } from '../../database/week.js';
+import { saveMatchRoomMessageId, saveOneNewMatchup, loadAllMatchups, loadMatchupsMissingLineups } from '../../database/matchup.js';
+import { saveInitialStandings, loadStandingWeeksSoFar, loadStandings, saveStandingsUpdate } from '../../database/standing.js';
+import { loadTeams, loadActiveTeams, loadTeam } from '../../database/team.js';
+import { saveDropAllPlayers, saveStarPointsToRatings, loadAllPlayersOnTeam, loadPlayerFromSnowflake } from '../../database/player.js';
+import { loadAllPairings, loadAllPairingResults, loadOpenPairings } from '../../database/pairing.js';
+import { savePlayerStatUpdate } from '../../database/pstat.js';
 
 export const SEASON_COMMAND = {
     data: new SlashCommandBuilder()
@@ -72,37 +83,27 @@ async function newSeason(interaction) {
 
     async function onConfirm(data) {
         const { length, playoffSize } = data;
-        await dropAllPlayers();
-        await updateStarRankings(currentSeason.number);
+        await saveDropAllPlayers();
+        await saveStarPointsToRatings(currentSeason.number);
         await makeSeasonAndWeeks(currentSeason.number + 1, length, playoffSize);
         await makeRegSeasonPairings(currentSeason.number + 1, length);
-        await initStandings(currentSeason.number + 1);
+        await saveInitialStandings(currentSeason.number + 1);
 
-        setCurrentSeason(db);
+        setCurrentSeason();
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
 }
 
-async function dropAllPlayers() {
-    await db.run('UPDATE player SET retain_rights = team, team = NULL, role = NULL');
-}
-
-async function updateStarRankings(season) {
-    await db.run('UPDATE player SET stars = (player.stars + (pstat.star_points / 100.0)) \
-                 FROM pstat WHERE pstat.player = player.id AND pstat.season = ?', season);
-}
-
 async function makeSeasonAndWeeks(season, length, playoffSize) {
-    await db.run('INSERT INTO season (number, current_week, regular_weeks, playoff_size) VALUES (?, ?, ?, ?)', season, 1, length, playoffSize);
+    await saveNewSeason(season, length, playoffSize);
 
-    for (let i = 0; i < length + Math.ceil(Math.log2(playoffSize)); i++) {
-        await db.run('INSERT INTO week (number, season) VALUES (?, ?)', i + 1, season);
-    }
+    const totalLength = length + Math.ceil(Math.log2(playoffSize));
+    await saveNewWeeks(totalLength, season);
 }
 
 async function makeRegSeasonPairings(season, length) {
-    let teams = shuffle(await db.all('SELECT id FROM team WHERE active = 1'));
+    let teams = shuffle(await loadActiveTeams());
 
     for (let i = 0; i < length; i++) {
         await makeOneWeekOfPairings(season, teams, i + 1);
@@ -115,7 +116,7 @@ async function makeOneWeekOfPairings(season, teams, week) {
         const leftTeam = teams[i];
         const rightTeam = teams[teams.length - 1 - i];
 
-        await db.run('INSERT INTO matchup (room, week, left_team, right_team) SELECT ?, id, ?, ? FROM week WHERE season = ? AND number = ?', i + 1, leftTeam.id, rightTeam.id, season, week);
+        await saveOneNewMatchup(i + 1, leftTeam.id, rightTeam.id, season, week);
     }
 }
 
@@ -129,15 +130,9 @@ function cycleTeams(teams) {
     teams[teams.length - 1] = secondTeam;
 }
 
-async function initStandings(season) {
-    const standingsQuery = 'INSERT INTO standing (season, team) SELECT ?, id FROM team WHERE active = 1';
-
-    await db.run(standingsQuery, season);
-}
-
 async function calculateStandings(interaction) {
     async function dataCollector(interaction) {
-        const standingsSoFar = await db.get('SELECT wins + losses + ties AS standingsWeeks FROM standing WHERE season = ? LIMIT 1', currentSeason.number);
+        const standingsSoFar = await loadStandingWeeksSoFar(currentSeason.number);
 
         // because we stop updating standings for playoff, but you're never doing calculate_standings after next_week in playoff
         const nextStandingsWeek =
@@ -145,7 +140,7 @@ async function calculateStandings(interaction) {
                 ? currentSeason.current_week
                 : standingsSoFar.standingsWeeks + 1;
 
-        const openPairings = await getOpenPairings(nextStandingsWeek);
+        const openPairings = await loadOpenPairings(currentSeason.number, nextStandingsWeek);
 
         return { nextStandingsWeek, openPairings };
     }
@@ -173,7 +168,7 @@ async function calculateStandings(interaction) {
     async function onConfirm(data) {
         const { nextStandingsWeek } = data;
 
-        const pairings = await getPairingResults(nextStandingsWeek);
+        const pairings = await loadAllPairingResults(currentSeason.number, nextStandingsWeek);
         let teamWins = {};
 
         for (const pairing of pairings) {
@@ -181,12 +176,12 @@ async function calculateStandings(interaction) {
                 teamWins[pairing.winningTeam] = (teamWins[pairing.winningTeam] || 0) + 1;
             }
 
-            await updatePlayerStats(pairing);
+            await savePlayerStatUpdate(currentSeason.number, pairing);
         };
 
         if (nextStandingsWeek <= currentSeason.regular_weeks) {
             await updateStandings(teamWins, nextStandingsWeek);
-            const standings = await getStandings();
+            const standings = await loadStandings(currentSeason.number);
             await postStandings(nextStandingsWeek, standings);
 
             if (nextStandingsWeek === currentSeason.regular_weeks) {
@@ -203,78 +198,13 @@ async function calculateStandings(interaction) {
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
 }
 
-async function getPairingResults(nextStandingsWeek) {
-    const pairingsQuery =
-        'SELECT winningPlayer.id AS winningId, winningPlayer.stars AS winningStars, winningPlayer.team AS winningTeam, \
-                losingPlayer.id AS losingId, losingPlayer.stars AS losingStars, losingPlayer.team AS losingTeam, pairing.game1, pairing.dead FROM pairing \
-         INNER JOIN player AS winningPlayer ON winningPlayer.id = IIF(pairing.winner = pairing.left_player, pairing.left_player, pairing.right_player) \
-         INNER JOIN player AS losingPlayer ON losingPlayer.id = IIF(pairing.winner = pairing.left_player, pairing.right_player, pairing.left_player) \
-         INNER JOIN matchup ON matchup.id = pairing.matchup \
-         INNER JOIN week ON week.id = matchup.week \
-         WHERE week.number = ? AND week.season = ?';
-    return await db.all(pairingsQuery, nextStandingsWeek, currentSeason.number);
-}
-
-function getSpread(winningStars, losingStars) {
-    const x = winningStars - losingStars;
-
-    if (x > 1) return 5;
-    if (x < -1) return 15;
-    return 10;
-}
-
-async function updatePlayerStats(pairing) {
-    if (pairing.dead) {
-        await db.run('UPDATE pstat SET ties = ties + 1 WHERE season = ? AND (player = ? OR player = ?)', currentSeason.number, pairing.winningId, pairing.losingId);
-    }
-    else if (!pairing.game1) {
-        await db.run('UPDATE pstat SET act_wins = act_wins + 1 WHERE season = ? AND player = ?', currentSeason.number, pairing.winningId);
-        await db.run('UPDATE pstat SET act_losses = act_losses + 1 WHERE season = ? AND player = ?', currentSeason.number, pairing.losingId);
-    }
-    else {
-        const spread = getSpread(pairing.winningStars, pairing.losingStars);
-        await db.run('UPDATE pstat SET wins = wins + 1, star_points = star_points + ? WHERE season = ? AND player = ?', spread, currentSeason.number, pairing.winningId);
-        await db.run('UPDATE pstat SET losses = losses + 1, star_points = star_points - ? WHERE season = ? AND player = ?', spread, currentSeason.number, pairing.losingId);
-    }
-}
-
-async function getMatchups(nextStandingsWeek) {
-    const matchupsQuery =
-        'SELECT leftTeam.id AS leftId, leftTeam.discord_snowflake AS leftSnowflake, rightTeam.id AS rightId, rightTeam.discord_snowflake AS rightSnowflake FROM matchup \
-         INNER JOIN team AS leftTeam ON leftTeam.id = matchup.left_team \
-         INNER JOIN team AS rightTeam ON rightTeam.id = matchup.right_team \
-         INNER JOIN week ON matchup.week = week.id \
-         WHERE week.number = ? AND week.season = ? \
-         ORDER BY matchup.room';
-    return await db.all(matchupsQuery, nextStandingsWeek, currentSeason.number);
-}
-
 async function updateStandings(teamWins, nextStandingsWeek) {
-    const matchups = await getMatchups(nextStandingsWeek);
+    const matchups = await loadAllMatchups(currentSeason.number, nextStandingsWeek);
 
     for (const matchup of matchups) {
         const differential = teamWins[matchup.leftId] - teamWins[matchup.rightId];
-        if (differential > 0) {
-            await db.run('UPDATE standing SET wins = wins + 1, points = points + 3, battle_differential = battle_differential + ? WHERE season = ? AND team = ?', differential, currentSeason.number, matchup.leftId);
-            await db.run('UPDATE standing SET losses = losses + 1, battle_differential = battle_differential - ? WHERE season = ? AND team = ?', differential, currentSeason.number, matchup.rightId);
-        }
-        else if (differential < 0) {
-            await db.run('UPDATE standing SET losses = losses + 1, battle_differential = battle_differential + ? WHERE season = ? AND team = ?', differential, currentSeason.number, matchup.leftId);
-            await db.run('UPDATE standing SET wins = wins + 1, points = points + 3, battle_differential = battle_differential - ? WHERE season = ? AND team = ?', differential, currentSeason.number, matchup.rightId);
-        }
-        else {
-            await db.run('UPDATE standing SET ties = ties + 1, points = points + 1 WHERE season = ? AND (team = ? OR team = ?)', currentSeason.number, matchup.leftId, matchup.rightId);
-        }
+        await saveStandingsUpdate(currentSeason.number, differential, matchup.leftId, matchup.rightId);
     };
-}
-
-async function getStandings() {
-    const standingsQuery = 'SELECT team.id AS teamId, team.discord_snowflake AS teamSnowflake, team.name AS teamName, standing.wins, standing.losses, standing.ties, standing.battle_differential, standing.points FROM standing \
-                            INNER JOIN team ON team.id = standing.team \
-                            WHERE season = ? \
-                            ORDER BY standing.points DESC, standing.battle_differential DESC';
-
-    return await db.all(standingsQuery, currentSeason.number);
 }
 
 async function postStandings(nextStandingsWeek, standings) {
@@ -300,10 +230,8 @@ function prettyTextStanding(rank, standing) {
 async function setUpPlayoff(standings) {
     // I'm sure there's an algorithm but I do not feel like figuring it out right now
     if (currentSeason.playoff_size === 4) {
-        const playoffQuery = 'INSERT INTO matchup (room, week, left_team, right_team) \
-                              VALUES (?, (SELECT id FROM week WHERE number = ? AND season = ?), ?, ?)';
-        await db.run(playoffQuery, 'sf1', currentSeason.current_week + 1, currentSeason.number, standings[0].teamId, standings[3].teamId);
-        await db.run(playoffQuery, 'sf2', currentSeason.current_week + 1, currentSeason.number, standings[1].teamId, standings[2].teamId);
+        await saveOneNewMatchup('sf1', standings[0].teamId, standings[3].teamId, currentSeason.number, currentSeason.current_week + 1);
+        await saveOneNewMatchup('sf2', standings[1].teamId, standings[3].teamId, currentSeason.number, currentSeason.current_week + 1);
     }
 
     await hideAllRegularRooms();
@@ -311,7 +239,7 @@ async function setUpPlayoff(standings) {
 }
 
 async function hideAllRegularRooms() {
-    const allTeamSnowflakes = (await db.all('SELECT discord_snowflake FROM team')).map(team => team.discord_snowflake);
+    const allTeamSnowflakes = (await loadTeams()).map(team => team.discord_snowflake);
 
     for (let i = 1; i < 6; i++) {
         const matchRoom = await channels.fetch(eval(`process.env.matchChannel${pairingSet[0].room}Id`));
@@ -343,9 +271,7 @@ async function advancePlayoffWinners(teamWins) {
     }
     // again, i'm sure there's an algorithm, but I don't feel like figuring it out right now.
     else if (winners.length === 2) {
-        const playoffQuery = 'INSERT INTO matchup (room, week, left_team, right_team) \
-                              VALUES(?, (SELECT id FROM week WHERE number = ? AND season = ?), ?, ?)';
-        await db.run(playoffQuery, 'finals', currentSeason.current_week + 1, currentSeason.number, winners[0], winners[1]);
+        await saveOneNewMatchup('finals', winners[0], winners[1], currentSeason.number, currentSeason.current_week + 1);
         announceNextPlayoffRound();
     }
 }
@@ -366,10 +292,10 @@ async function announceNextPlayoffRound() {
 }
 
 async function declareWinner(winner) {
-    const winnerRole = (await db.get('SELECT discord_snowflake FROM team WHERE id = ?', winner)).discord_snowflake;
+    const winningTeamSnowflake = (await loadTeam(winner)).discord_snowflake;
 
-    await announceWinner(winnerRole);
-    await makeWinnerRole(winnerRole);
+    await announceWinner(winningTeamSnowflake);
+    await makeWinnerRole(winner, winningTeamSnowflake);
 }
 
 async function announceWinner(winner) {
@@ -381,8 +307,8 @@ async function announceWinner(winner) {
     });
 }
 
-async function makeWinnerRole(winner) {
-    const color = (await mushiLeagueGuild.roles.fetch(winner)).hexColor;
+async function makeWinnerRole(winningTeamId, winningTeamSnowflake) {
+    const color = (await mushiLeagueGuild.roles.fetch(winningTeamSnowflake)).hexColor;
     const lastWinnerPosition = (await mushiLeagueGuild.roles.cache.find(r => r.name === `Season ${currentSeason.number - 1} Winner`)).position;
 
     const winnerRole = await mushiLeagueGuild.roles.create({
@@ -391,9 +317,7 @@ async function makeWinnerRole(winner) {
         position: lastWinnerPosition + 1,
     });
 
-    const playersQuery = 'SELECT discord_snowflake FROM player \
-                          WHERE player.team = (SELECT id FROM team WHERE discord_snowflake = ?)';
-    const players = (await db.all(playersQuery, winner)).map(player => player.discord_snowflake);
+    const players = (await loadAllPlayersOnTeam(winningTeamId)).map(player => player.discord_snowflake);
     const members = await mushiLeagueGuild.members.fetch({ user: players });
 
     members.forEach(member => member.roles.add(winnerRole));
@@ -401,8 +325,8 @@ async function makeWinnerRole(winner) {
 
 async function nextWeek(interaction) {
     async function dataCollector(interaction) {
-        const pairingsNeedingExtension = await getOpenPairings(currentSeason.number, currentSeason.current_week);
-        const matchupsMissingLineups = await getMatchupsMissingLineups(currentSeason.number, currentSeason.current_week + 1);
+        const pairingsNeedingExtension = await loadOpenPairings(currentSeason.number, currentSeason.current_week);
+        const matchupsMissingLineups = await loadMatchupsMissingLineups(currentSeason.number, currentSeason.current_week + 1);
 
         return { pairingsNeedingExtension, matchupsMissingLineups };
     }
@@ -436,7 +360,7 @@ async function nextWeek(interaction) {
         for (const matchup of matchupsMissingLineups) {
             await autoGenerateLineup(matchup);
         }
-        const groupedPairings = groupPairingsByRoom(await getNextPairings());
+        const groupedPairings = groupPairingsByRoom(await loadAllPairings(currentSeason.number, currentSeason.current_week));
         await updateMatchRooms(groupedPairings);
         await postPredictions(groupedPairings);
         await postScheduling(groupedPairings);
@@ -446,8 +370,8 @@ async function nextWeek(interaction) {
 }
 
 async function advanceCurrentWeek() {
-    currentSeason.current_week += 1;
-    await db.run('UPDATE season SET current_week = ? WHERE number = ?', currentSeason.current_week, currentSeason.number);
+    await saveAdvanceWeek(currentSeason.number, currentSeason.current_week + 1);
+    await setCurrentSeason();
 }
 
 async function updateMatchReportsHeader() {
@@ -478,7 +402,7 @@ function groupPairingsByRoom(pairings) {
 }
 
 async function createExtensionRoom(pairings) {
-    const matchRoomName = await getMatchRoomName(pairings[0].matchup);
+    const matchRoomName = getMatchRoomName(pairings[0].matchup);
     const matchRoom = await channels.cache.find(channel => channel.name === matchRoomName);
 
     return await matchRoom.clone({
@@ -486,19 +410,14 @@ async function createExtensionRoom(pairings) {
     });
 }
 
-async function getMatchRoomName(matchupId) {
-    const matchRoomQuery = 'SELECT leftTeam.name AS leftTeamName, rightTeam.name AS rightTeamName, room FROM matchup \
-                            INNER JOIN team AS leftTeam ON leftTeam.id = matchup.left_team \
-                            INNER JOIN team AS rightTeam ON rightTeam.id = matchup.right_team \
-                            WHERE matchup.id = ?';
-    const matchup = await db.get(matchRoomQuery, matchupId);
-
-    return `${matchup.room}-${initials(matchup.leftTeamName)}-vs-${initials(matchup.rightTeamName)}`;
+function getMatchRoomName(matchup) {
+    return `${matchup.room}-${initials(matchup.leftName)}-vs-${initials(matchup.rightName)}`;
 }
 
 function initials(name) {
     return name.split(' ').map(word => word[0]).join('').toLowerCase();
 }
+
 
 async function notifyPairings(pairingSet, extensionRoom) {
     const extensionMessage = `${roleMention(pairingSet[0].leftTeamSnowflake)} vs ${roleMention(pairingSet[0].rightTeamSnowflake)}\n\n`.concat(
@@ -515,30 +434,15 @@ async function notifyPairings(pairingSet, extensionRoom) {
 }
 
 async function autoGenerateLineup(matchup, interaction) {
-    const slots = matchup.slots || 5;
-    const lineup = await db.all('SELECT id FROM player WHERE team = ? AND role != 3 ORDER BY stars DESC LIMIT ?', matchup.teamId, slots);
-    const submitter = await db.get('SELECT id FROM player WHERE discord_snowflake = ?', interaction.user.id);
+    const slots = matchup.slots || currentSeason.min_lineup;
+    const lineup = (await loadPlayersOnTeamInStarOrder(matchup.teamId)).slice(0, slots);
+    const submitter = await loadPlayerFromSnowflake(interaction.user.id);
     await commitLineup(matchup, matchup.rigged_count, lineup, submitter);
-}
-
-async function getNextPairings() {
-    const pairingQuery = 'SELECT pairing.id, pairing.matchup, pairing.slot, matchup.room, leftPlayer.discord_snowflake AS leftPlayerSnowflake, leftTeam.discord_snowflake AS leftTeamSnowflake, leftTeam.emoji AS leftEmoji, \
-                          rightPlayer.discord_snowflake AS rightPlayerSnowflake, rightTeam.discord_snowflake AS rightTeamSnowflake, rightTeam.emoji AS rightEmoji FROM pairing \
-                          INNER JOIN matchup ON pairing.matchup = matchup.id \
-                          INNER JOIN week ON matchup.week = week.id \
-                          INNER JOIN team AS leftTeam ON matchup.left_team = leftTeam.id \
-                          INNER JOIN team AS rightTeam ON matchup.right_team = rightTeam.id \
-                          INNER JOIN player AS leftPlayer ON pairing.left_player = leftPlayer.id \
-                          INNER JOIN player AS rightPlayer ON pairing.right_player = rightPlayer.id \
-                          WHERE week.number = ? AND week.season = ? \
-                          ORDER BY room ASC, slot ASC';
-
-    return await db.all(pairingQuery, currentSeason.current_week, currentSeason.number);
 }
 
 async function updateMatchRooms(groupedPairings) {
     for (const pairingSet of groupedPairings.values()) {
-        const matchRoomName = await getMatchRoomName(pairingSet[0].matchup);
+        const matchRoomName = getMatchRoomName(pairingSet[0].matchup);
         const matchRoom = await channels.fetch(eval(`process.env.matchChannel${pairingSet[0].room}Id`));
 
         await setUpRoom(pairingSet, matchRoomName, matchRoom);
@@ -548,7 +452,7 @@ async function updateMatchRooms(groupedPairings) {
 
 async function setUpRoom(pairingSet, matchRoomName, matchRoom) {
     await matchRoom.setName(matchRoomName);
-    const allTeamSnowflakes = (await db.all('SELECT discord_snowflake FROM team')).map(team => team.discord_snowflake);
+    const allTeamSnowflakes = (await loadTeams()).map(team => team.discord_snowflake);
 
     if (pairingSet[0].room == parseInt(pairingSet[0].room)) {
         await setUpRegularRoom(pairingSet, matchRoom, allTeamSnowflakes);
@@ -611,7 +515,7 @@ async function postPairingMessage(pairingSet, matchRoom) {
     });
 
     await pairingPost.pin();
-    await db.run('UPDATE matchup SET channel_message = ? WHERE id = ?', pairingPost.id, pairingSet[0].matchup);
+    await saveMatchRoomMessageId(pairingPost.id, pairingSet[0].matchup);
 }
 
 const rules = 'A few rules to remember:\n' +

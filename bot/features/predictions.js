@@ -1,6 +1,9 @@
 import { userMention, roleMention, bold } from 'discord.js';
-import { db, channels, currentSeason } from '../globals.js';
+import { channels } from '../globals.js';
 import { weekName } from '../commands/util.js';
+
+import { savePredictionsMessageId } from '../../database/pairing.js';
+import { loadWeeklyTopTenInPredictions, loadCumulativeTopTenInPredictions, savePredictionsToDatabase } from '../../database/prediction.js';
 
 export async function postPredictions(groupedPairings) {
     const predictionsChannel = await channels.fetch(process.env.predictionsChannelId);
@@ -29,11 +32,7 @@ async function sendPredictionMessage(predictionsChannel, content, leftEmoji, rig
     await message.react(leftEmoji);
     await message.react(rightEmoji);
 
-    await savePredictionsMessage(table, message.id, primaryKey);
-}
-
-async function savePredictionsMessage(table, messageId, primaryKey) {
-    await db.run(`UPDATE ${table} SET predictions_message = ? WHERE id = ?`, messageId, primaryKey);
+    await savePredictionsMessageId(table, message.id, primaryKey);
 }
 
 export async function changePredictionsPlayer(predictionsMessageId, replacedPlayerSnowflake, newPlayerSnowflake) {
@@ -76,17 +75,6 @@ async function mapReactionsToPlayers(leftPlayer, leftEmoji, rightPlayer, rightEm
     predictions[rightPlayer] = predictions[rightPlayer].filter(reacter => !doublePredicters.has(reacter));
 
     return predictions;
-}
-
-async function savePredictionsToDatabase(pairingId, predictions, leftPlayer, rightPlayer) {
-    let insertQuery = 'INSERT INTO prediction (pairing, predictor_snowflake, predicted_winner) VALUES\n';
-
-    insertQuery = insertQuery.concat(
-        predictions[leftPlayer].map(reacter => `(${pairingId}, ${reacter}, ${leftPlayer}),\n`).join(''),
-        predictions[rightPlayer].map(reacter => `(${pairingId}, ${reacter}, ${rightPlayer})`).join(',\n')
-    );
-
-    await db.run(insertQuery);
 }
 
 export async function updatePrediction(pairingPredictionsMessageId, matchupPredictionsMessageId, act, dead, winnerOnLeft) {
@@ -152,47 +140,25 @@ async function resetMatchupPrediction(matchupPredictionsMessageId, winnerWasOnLe
 }
 
 export async function postPredictionStandings(season, week) {
-    const mainRoom = await channels.fetch(process.env.mainRoomId);
-
-    const cumulativeTopTen = await getCumulativeTopTenInPredictions(season, week);
-    const cumulativeStandingsMessage = bold(`Cumulative top ten in predictions as of ${weekName(week)}:`).concat(
-        '\n\n',
-        cumulativeTopTen.map((val, index) => `${index + 1}. ${userMention(val.predictor_snowflake)} (${val.correctPredictions})`).join('\n')
-    );
-    await mainRoom.send({ content: cumulativeStandingsMessage, allowedMentions: { parse: ['users'] } });
+    const weeklyTopTen = await loadWeeklyTopTenInPredictions(season, week);
+    await sendTopTenMessage(weeklyTopTen, bold(`Weekly top ten in predictions for ${weekName(week)}:`));
 
     if (week > 1) {
-        const weeklyTopTen = await getWeeklyTopTenInPredictions(season, week);
-        const weeklyStandingsMessage = bold(`Weekly top ten in predictions for ${weekName(week)}:`).concat(
-            '\n\n',
-            weeklyTopTen.map((val, index) => `${index + 1}. ${userMention(val.predictor_snowflake)} (${val.correctPredictions})`).join('\n')
-        );
-        await mainRoom.send({ content: weeklyStandingsMessage, allowedMentions: { parse: ['users'] } });
+        const cumulativeTopTen = await loadCumulativeTopTenInPredictions(season, week);
+        await sendTopTenMessage(cumulativeTopTen, bold(`Cumulative top ten in predictions as of ${weekName(week)}:`));
     }
 }
 
-async function getCumulativeTopTenInPredictions(season, week) {
-    const topTenQuery = 
-        'SELECT predictor_snowflake, count(predictor_snowflake) AS correctPredictions FROM prediction \
-         INNER JOIN pairing ON pairing = pairing.id \
-         INNER JOIN matchup ON pairing.matchup = matchup.id \
-         INNER JOIN week ON matchup.week = week.id \
-         WHERE pairing.winner IS NOT NULL AND pairing.winner = predicted_winner AND pairing.game1 IS NOT NULL AND week.season = ? AND week.number <= ? \
-         GROUP BY predictor_snowflake \
-         ORDER BY correctPredictions DESC LIMIT 10';
+async function sendTopTenMessage(topTen, header) {
+    const message = header.concat(
+        '\n\n',
+        topTen.map((val, index) => `${index + 1}. ${userMention(val.predictor_snowflake)} (${val.correctPredictions})`).join('\n')
+    );
 
-    return await db.all(topTenQuery, season, week);
-}
+    const mainRoom = await channels.fetch(process.env.mainRoomId);
 
-async function getWeeklyTopTenInPredictions(season, week) {
-    const topTenQuery =
-        'SELECT predictor_snowflake, count(predictor_snowflake) AS correctPredictions FROM prediction \
-         INNER JOIN pairing ON pairing = pairing.id \
-         INNER JOIN matchup ON pairing.matchup = matchup.id \
-         INNER JOIN week ON matchup.week = week.id \
-         WHERE pairing.winner IS NOT NULL AND pairing.winner = predicted_winner AND pairing.game1 IS NOT NULL AND week.season = ? AND week.number = ? \
-         GROUP BY predictor_snowflake \
-         ORDER BY correctPredictions DESC LIMIT 10';
-
-    return await db.all(topTenQuery, season, week);
+    await mainRoom.send({
+        content: message,
+        allowedMentions: { parse: ['users'] }
+    });
 }

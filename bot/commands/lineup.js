@@ -1,8 +1,12 @@
 import { SlashCommandBuilder, roleMention, userMention } from 'discord.js';
-import { confirmAction, sendFailure, addModOverrideableFailure, fixFloat, userIsCaptain, userIsCoach, userIsMod, weekName, baseFunctionlessHandler, baseHandler } from './util.js';
-import { db, currentSeason, channels } from '../globals.js';
+import { addModOverrideableFailure, fixFloat, userIsCaptain, userIsCoach, userIsMod, weekName, baseFunctionlessHandler, baseHandler } from './util.js';
+import { currentSeason, channels } from '../globals.js';
 import { changePredictionsPlayer } from '../features/predictions.js';
 import { changeScheduledPlayer } from '../features/schedule.js';
+import { loadPlayerFromSnowflake, loadTeamInStarOrder, loadPlayersForSubstitution } from '../../database/player.js';
+import { loadOneLineup, saveSubstitution, saveDeletePairingsForMatchup } from '../../database/pairing.js';
+import { loadMatchupsMissingLineups, loadMatchupForTeam, saveMatchupSubmission } from '../../database/matchup.js';
+import { loadTeam } from '../../database/team.js';
 
 export const LINEUP_COMMAND = {
     data: new SlashCommandBuilder()
@@ -146,37 +150,17 @@ async function submitLineup(interaction) {
             return { failure: "You aren't a captain or coach, so you must specify the team you are submitting for." };
         }
 
-        const submitterQuery = 
-            'SELECT player.id, player.discord_snowflake, team.discord_snowflake AS teamSnowflake FROM player \
-             LEFT JOIN team ON team.id = player.team \
-             WHERE player.discord_snowflake = ?'
-        const submitter = await db.get(submitterQuery, interaction.user.id);
+        const submitter = await loadPlayerFromSnowflake(interaction.user.id);
 
         const teamSnowflake = teamOption || submitter.teamSnowflake;
 
-        const matchupQuery = 
-            'SELECT matchup.id, matchup.rigged_count, matchup.slots, matchup.left_team, matchup.right_team, team.id AS teamId FROM matchup \
-             INNER JOIN week on matchup.week = week.id \
-             INNER JOIN team on matchup.left_team = team.id \
-             WHERE week.season = ? AND week.number = ? AND team.discord_snowflake = ? \
-             UNION \
-             SELECT matchup.id, matchup.rigged_count, matchup.slots, matchup.left_team, matchup.right_team, team.id AS teamId FROM matchup \
-             INNER JOIN week on matchup.week = week.id \
-             INNER JOIN team on matchup.right_team = team.id \
-             WHERE week.season = ? AND week.number = ? AND team.discord_snowflake = ?';
-        const matchup = await db.get(matchupQuery, currentSeason.number, currentSeason.current_week + 1, teamSnowflake, currentSeason.number, currentSeason.current_week + 1, teamSnowflake);
+        const matchup = await loadMatchupForTeam(currentSeason.number, currentSeason.current_week + 1, teamSnowflake);
 
         if (!matchup) {
             return { failure: `There are no weeks awaiting a lineup submission for ${roleMention(teamSnowflake)}.` };
         }
 
-        const rosterQuery = 
-            'SELECT player.id, player.discord_snowflake, player.stars, team.discord_snowflake AS teamSnowflake, role.name AS roleName FROM player \
-             INNER JOIN team ON player.team = team.id \
-             INNER JOIN role ON player.role = role.id \
-             WHERE team.discord_snowflake = ? \
-             ORDER BY stars DESC';
-        const roster = await db.all(rosterQuery, teamSnowflake);
+        const roster = await loadTeamInStarOrder(teamSnowflake);
 
         const lineup = lineupOption.map(player => roster.find(p => p.discord_snowflake === player.id) ?? { discord_snowflake: player.user.id });
 
@@ -260,10 +244,10 @@ async function submitLineup(interaction) {
 }
 
 async function clearMatchup(matchup, submitter) {
-    await db.run('DELETE FROM pairing WHERE matchup = ?', matchup.id);
+    await saveDeletePairingsForMatchup(matchup.id);
 
-    const otherTeam = (matchup.left_team === matchup.teamId) ? matchup.right_team : matchup.left_team;
-    const otherTeamRole = (await db.get('SELECT discord_snowflake FROM team WHERE id = ?', otherTeam)).discord_snowflake;
+    const otherTeam = (matchup.left_team === matchup.submittingTeamId) ? matchup.right_team : matchup.left_team;
+    const otherTeamRole = (await loadTeam(otherTeam)).discord_snowflake;
 
     const captainChannel = await channels.fetch(process.env.captainChannelId);
     await captainChannel.send({
@@ -273,45 +257,19 @@ async function clearMatchup(matchup, submitter) {
 }
 
 export async function commitLineup(matchup, riggedCount, lineup, submitter) {
-    const side = (matchup.left_team === matchup.teamId) ? 'left' : 'right';
-    await db.run(`UPDATE matchup SET rigged_count = ?, slots = ?, ${side}_submitter = ? WHERE id = ?`, riggedCount, lineup.length, submitter.id, matchup.id);
-
-    const pairings = await db.all('SELECT id FROM pairing WHERE matchup = ? ORDER BY slot ASC', matchup.id);
-
-    if (pairings.length > 0) {
-        for (const index in pairings) {
-            await db.run(`UPDATE pairing SET ${side}_player = ${lineup[index].id} WHERE id = ${pairings[index].id}`)
-        }
-    }
-    else {
-        await db.run(`INSERT INTO pairing (matchup, slot, ${side}_player) VALUES `.concat(lineup.map((player, index) => `(${matchup.id}, ${index + 1}, ${player.id})`).join(', ')));
-    }
+    const side = (matchup.left_team === matchup.submittingTeamId) ? 'left' : 'right';
+    await saveMatchupSubmission(matchup.id, riggedCount, lineup.length, side, submitter.id);
+    await saveLineupSubmission(matchup.id, side, lineup);
 }
 
 async function notifyOwnersIfAllLineupsIn() {
-    if ((await getMatchupsMissingLineups(currentSeason.number, currentSeason.current_week + 1)).length === 0) {
+    if ((await loadMatchupsMissingLineups(currentSeason.number, currentSeason.current_week + 1)).length === 0) {
         const captainChannel = await channels.fetch(process.env.captainChannelId);
         await captainChannel.send({
             content: `${roleMention(process.env.ownerRoleId)} all lineups are in -- run /season next_week when you've confirmed.`,
             allowedMentions: { parse: ['roles'] }
         });
     }
-}
-
-export async function getMatchupsMissingLineups(season, week) {
-    const matchupsMissingLineupsQuery =
-        'SELECT team.id AS teamId, team.discord_snowflake AS delinquentTeamSnowflake, matchup.left_team, matchup.right_team, matchup.slots, matchup.rigged_count FROM matchup \
-         LEFT JOIN pairing ON pairing.matchup = matchup.id \
-         INNER JOIN team ON team.id = matchup.left_team \
-         INNER JOIN week ON week.id = matchup.week \
-         WHERE pairing.left_player IS NULL AND week.season = ? AND week.number = ? \
-         UNION \
-         SELECT team.id, team.discord_snowflake, matchup.left_team, matchup.right_team, matchup.slots AS matchupSlots, matchup.rigged_count FROM matchup \
-         LEFT JOIN pairing ON pairing.matchup = matchup.id \
-         INNER JOIN team ON team.id = matchup.right_team \
-         INNER JOIN week on week.id = matchup.week \
-         WHERE pairing.right_player IS NULL AND week.season = ? AND week.number = ?';
-    return await db.all(matchupsMissingLineupsQuery, season, week, season, week);
 }
 
 async function substitutePlayer(interaction) {
@@ -326,34 +284,7 @@ async function substitutePlayer(interaction) {
 
         const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
 
-        const matchupQuery = 
-            'SELECT matchup.id, matchup.slots, matchup.left_team, matchup.right_team, matchup.room, matchup.channel_message, matchup.schedule_message, \
-             team.id AS teamId, team.discord_snowflake AS teamSnowflake FROM matchup \
-             INNER JOIN week on matchup.week = week.id \
-             INNER JOIN team on matchup.left_team = team.id \
-             WHERE week.season = ? AND week.number = ? AND team.id = (SELECT team FROM player WHERE player.discord_snowflake = ?) \
-             UNION \
-             SELECT matchup.id, matchup.slots, matchup.left_team, matchup.right_team, matchup.room, matchup.channel_message, matchup.schedule_message, \
-             team.id AS teamId, team.discord_snowflake AS teamSnowflake FROM matchup \
-             INNER JOIN week on matchup.week = week.id \
-             INNER JOIN team on matchup.right_team = team.id \
-             WHERE week.season = ? AND week.number = ? AND team.id = (SELECT team FROM player WHERE player.discord_snowflake = ?)';
-        const matchup = await db.get(matchupQuery, currentSeason.number, week, replacedPlayer.id, currentSeason.number, week, replacedPlayer.id);
-
-        if (!matchup) {
-            return { failure: 'No games found for your team this week.' };
-        }
-
-        const side = (matchup.left_team === matchup.teamId) ? 'left' : 'right';
-
-        const playersQuery = 
-            `SELECT player.id, player.stars, player.discord_snowflake, team.discord_snowflake AS teamSnowflake, role.name AS roleName, \
-             pairing.slot, pairing.winner, pairing.dead, pairing.predictions_message FROM player \
-             LEFT JOIN pairing on pairing.${side}_player = player.id AND pairing.matchup = ? \
-             INNER JOIN team ON team.id = player.team \
-             INNER JOIN role ON role.id = player.role \
-             WHERE (player.discord_snowflake = ? OR player.discord_snowflake = ?)`;
-        const players = await db.all(playersQuery, matchup.id, replacedPlayer.id, newPlayer.id);
+        const players = await loadPlayersForSubstitution(matchup.id, replacedPlayer.id, newPlayer.id);
 
         if (players.length !== 2) {
             return { failure: `Could not find both ${replacedPlayer} and ${newPlayer} in the player pool.` };
@@ -362,7 +293,13 @@ async function substitutePlayer(interaction) {
         const newPlayerData = players.find(p => p.discord_snowflake === newPlayer.id);
         const replacedPlayerData = players.find(p => p.discord_snowflake === replacedPlayer.id);
 
-        return { isMod: userIsMod(interaction.member), newPlayer: newPlayerData, replacedPlayer: replacedPlayerData, side, matchup };
+        const matchup = await loadMatchupForTeam(currentSeason.number, week, replacedPlayerData.teamSnowflake);
+
+        if (!matchup) {
+            return { failure: 'No games found for your team this week.' };
+        }
+
+        return { isMod: userIsMod(interaction.member), newPlayer: newPlayerData, replacedPlayer: replacedPlayerData, side: replacedPlayer.side, matchup };
     }
 
     function verifier(data) {
@@ -408,7 +345,7 @@ async function substitutePlayer(interaction) {
 
     async function onConfirm(data) {
         const { replacedPlayer, newPlayer, matchup, side } = data;
-        await db.run(`UPDATE pairing SET ${side}_player = ? WHERE matchup = ? AND slot = ?`, newPlayer.id, matchup.id, replacedPlayer.slot);
+        await saveSubstitution(matchup.id, replacedPlayer.slot, side, newPlayer.id);
 
         const matchRoom = await channels.fetch(eval(`process.env.matchChannel${matchup.room}Id`));
         const channelMessage = await matchRoom.messages.fetch({ message: matchup.channel_message, force: true });
@@ -428,7 +365,7 @@ async function houndCaptains(interaction) {
             return { failure: 'You must be a mod to use this command!' };
         }
 
-        const missingLineups = await getMatchupsMissingLineups(currentSeason.number, currentSeason.current_week + 1);
+        const missingLineups = await loadMatchupsMissingLineups(currentSeason.number, currentSeason.current_week + 1);
 
         return { missingLineups };
     }
@@ -468,22 +405,7 @@ async function remindLineup(interaction) {
 
         const week = currentSeason.current_week + 1;
 
-        const lineupQuery =
-            'SELECT slot, player.discord_snowflake AS playerSnowflake, matchup.rigged_count, team.discord_snowflake AS teamSnowflake FROM pairing \
-             INNER JOIN matchup ON pairing.matchup = matchup.id \
-             INNER JOIN week ON matchup.week = week.id \
-             INNER JOIN player ON pairing.left_player = player.id \
-             INNER JOIN team ON matchup.left_team = team.id \
-             WHERE matchup.left_team = (SELECT team FROM player WHERE discord_snowflake = ?) AND week.season = ? AND week.number = ? \
-             UNION \
-             SELECT slot, player.discord_snowflake AS playerSnowflake, matchup.rigged_count, team.discord_snowflake AS teamSnowflake FROM pairing \
-             INNER JOIN matchup ON pairing.matchup = matchup.id \
-             INNER JOIN week ON matchup.week = week.id \
-             INNER JOIN player ON pairing.right_player = player.id \
-             INNER JOIN team ON matchup.left_team = team.id \
-             WHERE matchup.right_team = (SELECT team FROM player WHERE discord_snowflake = ?) AND week.season = ? AND week.number = ? \
-             ORDER BY slot ASC';
-        const lineup = await db.all(lineupQuery, interaction.user.id, currentSeason.number, week, interaction.user.id, currentSeason.number, week);
+        const lineup = await loadOneLineup(currentSeason.number, week, interaction.user.id);
 
         return { week, teamSnowflake: lineup[0].teamSnowflake, lineup };
     }

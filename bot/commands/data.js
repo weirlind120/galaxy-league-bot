@@ -1,6 +1,8 @@
 import { SlashCommandBuilder, italic, userMention } from "discord.js";
-import { currentSeason, db } from "../globals.js";
+import { currentSeason } from "../globals.js";
 import { baseFunctionlessHandler } from "./util.js";
+
+import { loadReplays } from "../../database/pairing.js";
 
 export const DATA_COMMAND = {
     data: new SlashCommandBuilder()
@@ -39,16 +41,7 @@ async function scoutPlayer(interaction) {
         const startSeason = interaction.options.getNumber('from_season') || 0;
         const endSeason = interaction.options.getNumber('through_season') || currentSeason.number;
 
-        const replayQuery =
-            'SELECT pairing.game1, pairing.game2, pairing.game3, pairing.game4, pairing.game5 FROM pairing \
-             INNER JOIN matchup ON pairing.matchup = matchup.id \
-             INNER JOIN week ON matchup.week = week.id \
-             WHERE week.season >= ? AND week.season <= ? AND pairing.game1 IS NOT NULL \
-                AND (pairing.left_player = (SELECT id FROM player WHERE discord_snowflake = ?) OR \
-                    pairing.right_player = (SELECT id FROM player WHERE discord_snowflake = ?)) \
-             ORDER BY week.season DESC, week.number DESC';
-
-        const replaysByWeek = await db.all(replayQuery, startSeason, endSeason, player.id, player.id);
+        const replaysByWeek = await loadReplays(startSeason, endSeason, player.id);
         const replays = replaysByWeek.flatMap(week => [week.game1, week.game2, week.game3, week.game4, week.game5]).filter(game => !!game);
 
         return { playerSnowflake: player.id, startSeason, endSeason, replays };
