@@ -415,7 +415,7 @@ async function setPlayerActive(interaction) {
             return { failure: `${player} is not in the pool; use /player add instead.` };
         }
 
-        return { playerSnowflake: player.id };
+        return { playerSnowflake: player.id, existingPlayer };
     }
 
     function verifier(data) {

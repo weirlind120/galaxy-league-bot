@@ -2,8 +2,8 @@ import { db } from './database.js';
 
 export async function loadAllPairings(season, week) {
     const query = 
-        'SELECT leftPlayer.discord_snowflake AS leftPlayerSnowflake, leftTeam.discord_snowflake AS leftTeamSnowflake, leftTeam.emoji AS leftEmoji, \
-                rightPlayer.discord_snowflake AS rightPlayerSnowflake, rightTeam.discord_snowflake AS rightTeamSnowflake, rightTeam.emoji AS rightEmoji, \
+        'SELECT leftPlayer.discord_snowflake AS leftPlayerSnowflake, leftTeam.name AS leftTeamName, leftTeam.discord_snowflake AS leftTeamSnowflake, leftTeam.emoji AS leftEmoji, \
+                rightPlayer.discord_snowflake AS rightPlayerSnowflake, rightTeam.name AS rightTeamName, rightTeam.discord_snowflake AS rightTeamSnowflake, rightTeam.emoji AS rightEmoji, \
                 pairing.id, pairing.matchup, pairing.slot, matchup.room FROM pairing \
          INNER JOIN matchup ON pairing.matchup = matchup.id \
          INNER JOIN week ON matchup.week = week.id \
@@ -19,8 +19,8 @@ export async function loadAllPairings(season, week) {
 
 export async function loadOpenPairings(season, week) {
     const query =
-        'SELECT leftPlayer.discord_snowflake AS leftPlayerSnowflake, leftTeam.discord_snowflake AS leftTeamSnowflake, \
-                rightPlayer.discord_snowflake AS rightPlayerSnowflake, rightTeam.discord_snowflake AS rightTeamSnowflake, pairing.matchup FROM pairing \
+        'SELECT leftPlayer.discord_snowflake AS leftPlayerSnowflake, leftTeam.name AS leftTeamName, leftTeam.discord_snowflake AS leftTeamSnowflake, \
+                rightPlayer.discord_snowflake AS rightPlayerSnowflake, rightTeam.name AS rightTeamName, rightTeam.discord_snowflake AS rightTeamSnowflake, pairing.matchup FROM pairing \
          INNER JOIN player AS leftPlayer ON leftPlayer.id = pairing.left_player \
          INNER JOIN player AS rightPlayer ON rightPlayer.id = pairing.right_player \
          INNER JOIN team AS leftTeam ON leftTeam.id = leftPlayer.team \
@@ -63,7 +63,7 @@ export async function loadAllPairingResults(season, week) {
          INNER JOIN player AS losingPlayer ON losingPlayer.id = IIF(pairing.winner = pairing.left_player, pairing.right_player, pairing.left_player) \
          INNER JOIN matchup ON matchup.id = pairing.matchup \
          INNER JOIN week ON week.id = matchup.week \
-         WHERE week.seas = ? AND week.number = ?';
+         WHERE week.season = ? AND week.number = ?';
 
     return await db.all(query, season, week);
 }

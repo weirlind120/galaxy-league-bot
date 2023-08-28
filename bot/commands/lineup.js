@@ -4,7 +4,7 @@ import { currentSeason, channels } from '../globals.js';
 import { changePredictionsPlayer } from '../features/predictions.js';
 import { changeScheduledPlayer } from '../features/schedule.js';
 import { loadPlayerFromSnowflake, loadTeamInStarOrder, loadPlayersForSubstitution } from '../../database/player.js';
-import { loadOneLineup, saveSubstitution, saveDeletePairingsForMatchup } from '../../database/pairing.js';
+import { loadOneLineup, saveSubstitution, saveDeletePairingsForMatchup, saveLineupSubmission } from '../../database/pairing.js';
 import { loadMatchupsMissingLineups, loadMatchupForTeam, saveMatchupSubmission } from '../../database/matchup.js';
 import { loadTeam } from '../../database/team.js';
 

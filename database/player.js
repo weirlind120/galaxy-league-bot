@@ -23,10 +23,11 @@ export async function loadAllPlayersOnTeam(teamId) {
 
 export async function loadPlayerFromSnowflake(playerSnowflake) {
     const query =
-        'SELECT id, name, stars, active, role.id AS roleId, role.discord_snowflake AS roleSnowflake, role.name AS roleName, team.id AS teamId, team.discord_snowflake AS teamSnowflake FROM player \
+        'SELECT player.id, player.name, player.stars, player.active, player.discord_snowflake, \
+                role.id AS roleId, role.discord_snowflake AS roleSnowflake, role.name AS roleName, team.id AS teamId, team.discord_snowflake AS teamSnowflake FROM player \
          LEFT JOIN team ON team.id = player.team \
          LEFT JOIN role ON role.id = player.role \
-         WHERE discord_snowflake = ?';
+         WHERE player.discord_snowflake = ?';
 
     return await db.get(query, playerSnowflake);
 }

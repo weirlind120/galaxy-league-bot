@@ -355,7 +355,7 @@ async function nextWeek(interaction) {
     async function onConfirm(data) {
         const { pairingsNeedingExtension, matchupsMissingLineups } = data;
         await advanceCurrentWeek();
-        await updateMatchReportsHeader();
+//        await updateMatchReportsHeader();
         await createExtensionRooms(pairingsNeedingExtension);
         for (const matchup of matchupsMissingLineups) {
             await autoGenerateLineup(matchup);
@@ -402,7 +402,7 @@ function groupPairingsByRoom(pairings) {
 }
 
 async function createExtensionRoom(pairings) {
-    const matchRoomName = getMatchRoomName(pairings[0].matchup);
+    const matchRoomName = getMatchRoomName(pairings[0]);
     const matchRoom = await channels.cache.find(channel => channel.name === matchRoomName);
 
     return await matchRoom.clone({
@@ -410,8 +410,8 @@ async function createExtensionRoom(pairings) {
     });
 }
 
-function getMatchRoomName(matchup) {
-    return `${matchup.room}-${initials(matchup.leftName)}-vs-${initials(matchup.rightName)}`;
+function getMatchRoomName(pairing) {
+    return `${pairing.room}-${initials(pairing.leftTeamName)}-vs-${initials(pairing.rightTeamName)}`;
 }
 
 function initials(name) {
@@ -442,10 +442,11 @@ async function autoGenerateLineup(matchup, interaction) {
 
 async function updateMatchRooms(groupedPairings) {
     for (const pairingSet of groupedPairings.values()) {
-        const matchRoomName = getMatchRoomName(pairingSet[0].matchup);
+        const matchRoomName = getMatchRoomName(pairingSet[0]);
         const matchRoom = await channels.fetch(eval(`process.env.matchChannel${pairingSet[0].room}Id`));
 
         await setUpRoom(pairingSet, matchRoomName, matchRoom);
+        await unpinOldPairingMessage(pairingSet[0].room, matchRoom);
         await postPairingMessage(pairingSet, matchRoom);
     }
 }
@@ -500,6 +501,11 @@ async function setUpPlayoffRoom(pairingSet, matchRoom, allTeamSnowflakes) {
     await matchRoom.permissionOverwrites.set(permissionOverwrites);
 
     // TO DO: move channels into active section. The code to finagle positions is stupid.
+}
+
+async function unpinOldPairingMessage(room, matchRoom) {
+    const oldPairingMessageId = (await loadOldPairingMessage(room)).channel_message;
+    await matchRoom.messages.unpin(oldPairingMessageId);
 }
 
 async function postPairingMessage(pairingSet, matchRoom) {

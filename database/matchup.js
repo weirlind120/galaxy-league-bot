@@ -18,8 +18,8 @@ export async function saveMatchupSubmission(matchupId, riggedCount, slots, side,
 
 export async function loadAllMatchups(season, week) {
     const query =
-        'SELECT leftTeam.id AS leftId, leftTeam.discord_snowflake AS leftSnowflake, leftTeam.name AS leftName, \
-                rightTeam.id AS rightId, rightTeam.discord_snowflake AS rightSnowflake, rightTeam.name AS rightName, \
+        'SELECT leftTeam.id AS leftId, leftTeam.discord_snowflake AS leftSnowflake, \
+                rightTeam.id AS rightId, rightTeam.discord_snowflake AS rightSnowflake, \
                 room FROM matchup \
          INNER JOIN team AS leftTeam ON leftTeam.id = matchup.left_team \
          INNER JOIN team AS rightTeam ON rightTeam.id = matchup.right_team \
@@ -48,17 +48,21 @@ export async function loadMatchupsMissingLineups(season, week) {
 
 export async function loadMatchupForTeam(season, week, teamSnowflake) {
     const query =
-        'SELECT matchup.id, matchup.slots, matchup.left_team, matchup.right_team, matchup.room, matchup.channel_message, matchup.schedule_message, \
-                team.id AS teamId, team.discord_snowflake AS teamSnowflake FROM matchup \
+        'SELECT matchup.id, matchup.slots, matchup.rigged_count, matchup.left_team, matchup.right_team, matchup.room, matchup.channel_message, matchup.schedule_message, \
+                team.id AS submittingTeamId, team.discord_snowflake AS teamSnowflake FROM matchup \
          INNER JOIN week ON matchup.week = week.id \
          INNER JOIN team ON (matchup.left_team = team.id OR matchup.right_team = team.id) \
          WHERE week.season = ? AND week.number = ? AND team.discord_snowflake = ? \
          UNION \
-         SELECT matchup.id, matchup.slots, matchup.left_team, matchup.right_team, matchup.room, matchup.channel_message, matchup.schedule_message, \
-                team.id AS teamId, team.discord_snowflake AS teamSnowflake FROM matchup \
+         SELECT matchup.id, matchup.slots, matchup.rigged_count, matchup.left_team, matchup.right_team, matchup.room, matchup.channel_message, matchup.schedule_message, \
+                team.id AS submittingTeamId, team.discord_snowflake AS teamSnowflake FROM matchup \
          INNER JOIN week on matchup.week = week.id \
          INNER JOIN team on matchup.right_team = team.id \
          WHERE week.season = ? AND week.number = ? AND team.discord_snowflake = ?';
 
-    return await db.get(query, season, week, teamSnowflake, currentSeason.number, week, teamSnowflake);
+    return await db.get(query, season, week, teamSnowflake, season, week, teamSnowflake);
+}
+
+export async function loadOldPairingMessage(room) {
+    return await db.get('SELECT channel_message FROM matchup WHERE room = ? AND channel_message IS NOT NULL ORDER BY week DESC LIMIT 1', room);
 }
