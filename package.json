@@ -8,11 +8,10 @@
     "node": "16.x"
   },
   "scripts": {
-    "start": "node app.js",
-    "register": "node commands.js",
-    "dev": "nodemon app.js"
+    "start": "node bot/app.js",
+    "register": "node bot/deploy-commands.js"
   },
-  "author": "Shay DeWael",
+  "author": "Keith Boone",
   "license": "MIT",
   "dependencies": {
     "date-fns": "^2.30.0",

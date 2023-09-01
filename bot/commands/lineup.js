@@ -284,7 +284,7 @@ async function substitutePlayer(interaction) {
 
         const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
 
-        const players = await loadPlayersForSubstitution(matchup.id, replacedPlayer.id, newPlayer.id);
+        const players = await loadPlayersForSubstitution(currentSeason.number, week, replacedPlayer.id, newPlayer.id);
 
         if (players.length !== 2) {
             return { failure: `Could not find both ${replacedPlayer} and ${newPlayer} in the player pool.` };
@@ -299,7 +299,7 @@ async function substitutePlayer(interaction) {
             return { failure: 'No games found for your team this week.' };
         }
 
-        return { isMod: userIsMod(interaction.member), newPlayer: newPlayerData, replacedPlayer: replacedPlayerData, side: replacedPlayer.side, matchup };
+        return { isMod: userIsMod(interaction.member), newPlayer: newPlayerData, replacedPlayer: replacedPlayerData, side: replacedPlayerData.side, matchup };
     }
 
     function verifier(data) {

@@ -68,14 +68,19 @@ export async function loadUndraftedPlayers(maxStars) {
     return await db.all('SELECT name, stars, discord_snowflake FROM player WHERE team IS NULL AND active = 1 AND stars <= ? ORDER BY stars DESC', maxStars);
 }
 
-export async function loadPlayersForSubstitution(matchupId, replacedPlayerSnowflake, newPlayerSnowflake) {
+export async function loadPlayersForSubstitution(season, week, replacedPlayerSnowflake, newPlayerSnowflake) {
     const query =
         'SELECT player.id, player.stars, player.discord_snowflake, team.discord_snowflake AS teamSnowflake, role.name AS roleName, \
                 pairing.slot, IIF(pairing.left_player = player.id, "left", "right") AS side, pairing.winner, pairing.dead, pairing.predictions_message FROM player \
-         LEFT JOIN pairing ON (pairing.left_player = player.id OR pairing.right_player = player.id) AND pairing.matchup = ? \
+         LEFT JOIN( \
+             SELECT * FROM pairing \
+	         INNER JOIN matchup ON matchup.id = pairing.matchup \
+	         INNER JOIN week ON week.id = matchup.week \
+	         WHERE week.season = ? AND week.number = ? \
+         ) AS pairing ON pairing.left_player = player.id OR pairing.right_player = player.id \
          INNER JOIN team ON team.id = player.team \
          INNER JOIN role ON role.id = player.role \
-         WHERE (player.discord_snowflake = ? OR player.discord_snowflake = ?)';
+         WHERE player.discord_snowflake = ? OR player.discord_snowflake = ?';
 
-    return await db.all(query, matchupId, replacedPlayerSnowflake, newPlayerSnowflake);
+    return await db.all(query, season, week, replacedPlayerSnowflake, newPlayerSnowflake);
 }
