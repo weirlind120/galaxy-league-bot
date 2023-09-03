@@ -1,6 +1,28 @@
 import { ButtonBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonStyle } from 'discord.js';
 import { currentSeason } from '../globals.js';
 
+async function breakAndSendReply(interaction, reply, ephemeral, deferred) {
+    let replies = [];
+
+    while (reply.length > 1800) {
+        const index = reply.indexOf('\n', 1700);
+        replies.push(reply.substring(0, index));
+        reply = reply.substring(index + 1);
+    }
+    replies.push(reply);
+
+    if (deferred) {
+        await interaction.editReply(replies.shift());
+    }
+    else {
+        await interaction.reply({ content: replies.shift(), ephemeral: ephemeral });
+    }
+
+    while (replies.length > 0) {
+        await interaction.followUp({ content: replies.shift(), ephemeral: ephemeral });
+    }
+}
+
 export async function baseHandler(interaction, dataCollector, verifier, onConfirm, ephemeral, deferred) {
     if (deferred) {
         await interaction.deferReply({ ephemeral: ephemeral });
@@ -34,22 +56,12 @@ export async function baseFunctionlessHandler(interaction, dataCollector, verifi
 
     const response = responseWriter(data);
 
-    if (deferred) {
-        await interaction.editReply(response);
-    }
-    else {
-        await interaction.reply({ content: response, ephemeral: ephemeral });
-    }
+    await breakAndSendReply(interaction, response, ephemeral, deferred);
 }
 
 export async function confirmAction(interaction, confirmLabel, prompts, confirmMessage, cancelMessage, ephemeral, deferred) {
     if (!prompts || prompts.length === 0) {
-        if (deferred) {
-            await interaction.editReply(confirmMessage);
-        }
-        else {
-            await interaction.reply({ content: confirmMessage, ephemeral: ephemeral });
-        }
+        await breakAndSendReply(interaction, confirmMessage, ephemeral, deferred);
         return true;
     }
 
@@ -85,14 +97,10 @@ export function sendFailure(interaction, failures, deferred) {
     if (failures?.constructor === Array) {
         failures = failures.join('\n');
     }
+    const content = `Action FAILED:\n${failures}`;
 
     if (failures) {
-        if (deferred) {
-            interaction.editReply({ content: `Action FAILED:\n${failures}` });
-        }
-        else {
-            interaction.reply({ content: `Action FAILED:\n${failures}`, ephemeral: true });
-        }
+        breakAndSendReply(interaction, content, true, deferred);
         return true;
     }
 
