@@ -552,16 +552,15 @@ async function postReport(pairing, winnerOnLeft, extension, games, act, dead) {
             allowedMentions: { parse: [] }
         });
     }
-
     else {
         await matchReportChannel.send({
-            content: makeReportPlaintext(pairing, winnerOnLeft, extension, games, act, dead),
+            content: makeReportPlaintext(pairing, winnerOnLeft, extension, act, dead),
             allowedMentions: { parse: [] }
         });
     }
 }
 
-function makeReportPlaintext(pairing, winnerOnLeft, extension, games, act, dead) {
+function makeReportPlaintext(pairing, winnerOnLeft, extension, act, dead) {
     const leftPlayerText = `(${roleMention(pairing.leftTeamSnowflake)}) ${userMention(pairing.leftPlayerSnowflake)}`;
     const rightPlayerText = `${userMention(pairing.rightPlayerSnowflake)} (${roleMention(pairing.rightTeamSnowflake)})`;
     const extensionMessage = extension ? italic('\n(Extension from last week)') : '';
@@ -573,17 +572,7 @@ function makeReportPlaintext(pairing, winnerOnLeft, extension, games, act, dead)
     if (dead) {
         return `${leftPlayerText} vs ${rightPlayerText} marked dead.` + extensionMessage;
     }
-
-    const winnerText = games.length === 2
-        ? winnerOnLeft ? '\u{0032}\u{FE0F}\u{20E3} > \u{0030}\u{FE0F}\u{20E3}' : '\u{0030}\u{FE0F}\u{20E3} < \u{0032}\u{FE0F}\u{20E3}'
-        : winnerOnLeft ? '\u{0032}\u{FE0F}\u{20E3} > \u{0031}\u{FE0F}\u{20E3}' : '\u{0031}\u{FE0F}\u{20E3} < \u{0032}\u{FE0F}\u{20E3}';
-    const matchReportHeader = `${leftPlayerText} ${spoiler(winnerText)} ${rightPlayerText}`;
-    let links = games.map((game, i) => hyperlink(`\ngame ${i + 1}`, game));
-    if (links.length === 2) {
-        links[3] = hyperlink(`\ngame ${i + 1}`, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
-    }
-
-    return matchReportHeader + links.join('') + extensionMessage;
+    return 'jumpy broke a thing'
 }
 
 function makeReplayEmbed(pairing, winnerOnLeft, extension, games) {
