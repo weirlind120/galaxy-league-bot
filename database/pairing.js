@@ -20,7 +20,7 @@ export async function loadAllPairings(season, week) {
 export async function loadOpenPairings(season, week) {
     const query =
         'SELECT leftPlayer.discord_snowflake AS leftPlayerSnowflake, leftTeam.name AS leftTeamName, leftTeam.discord_snowflake AS leftTeamSnowflake, \
-                rightPlayer.discord_snowflake AS rightPlayerSnowflake, rightTeam.name AS rightTeamName, rightTeam.discord_snowflake AS rightTeamSnowflake, pairing.matchup FROM pairing \
+                rightPlayer.discord_snowflake AS rightPlayerSnowflake, rightTeam.name AS rightTeamName, rightTeam.discord_snowflake AS rightTeamSnowflake, pairing.matchup, matchup.room FROM pairing \
          INNER JOIN player AS leftPlayer ON leftPlayer.id = pairing.left_player \
          INNER JOIN player AS rightPlayer ON rightPlayer.id = pairing.right_player \
          INNER JOIN team AS leftTeam ON leftTeam.id = leftPlayer.team \

@@ -1,7 +1,7 @@
 import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention, bold, codeBlock } from 'discord.js';
 import shuffle from 'lodash/shuffle.js';
 
-import { rightAlign, weekName, baseHandler } from './util.js';
+import { rightAlign, weekName, baseHandler, wait } from './util.js';
 import { commitLineup } from './lineup.js';
 
 import { currentSeason, channels, mushiLeagueGuild, setCurrentSeason } from '../globals.js';
@@ -11,7 +11,7 @@ import { postScheduling } from '../features/schedule.js';
 
 import { saveNewSeason, saveAdvanceWeek } from '../../database/season.js';
 import { saveNewWeeks } from '../../database/week.js';
-import { saveMatchRoomMessageId, saveOneNewMatchup, loadAllMatchups, loadMatchupsMissingLineups } from '../../database/matchup.js';
+import { saveMatchRoomMessageId, saveOneNewMatchup, loadAllMatchups, loadMatchupsMissingLineups, loadOldPairingMessage } from '../../database/matchup.js';
 import { saveInitialStandings, loadStandingWeeksSoFar, loadStandings, saveStandingsUpdate } from '../../database/standing.js';
 import { loadTeams, loadActiveTeams, loadTeam } from '../../database/team.js';
 import { saveDropAllPlayers, saveStarPointsToRatings, loadAllPlayersOnTeam, loadPlayerFromSnowflake } from '../../database/player.js';
@@ -355,7 +355,7 @@ async function nextWeek(interaction) {
     async function onConfirm(data) {
         const { pairingsNeedingExtension, matchupsMissingLineups } = data;
         await advanceCurrentWeek();
-//        await updateMatchReportsHeader();
+        await updateMatchReportsHeader();
         await createExtensionRooms(pairingsNeedingExtension);
         for (const matchup of matchupsMissingLineups) {
             await autoGenerateLineup(matchup);
@@ -442,6 +442,7 @@ async function autoGenerateLineup(matchup, interaction) {
 
 async function updateMatchRooms(groupedPairings) {
     for (const pairingSet of groupedPairings.values()) {
+        wait(1000);
         const matchRoomName = getMatchRoomName(pairingSet[0]);
         const matchRoom = await channels.fetch(eval(`process.env.matchChannel${pairingSet[0].room}Id`));
 

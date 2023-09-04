@@ -1,6 +1,6 @@
 import { userMention, roleMention, bold } from 'discord.js';
 import { channels } from '../globals.js';
-import { weekName } from '../commands/util.js';
+import { weekName, wait } from '../commands/util.js';
 
 import { savePredictionsMessageId } from '../../database/pairing.js';
 import { loadWeeklyTopTenInPredictions, loadCumulativeTopTenInPredictions, savePredictionsToDatabase } from '../../database/prediction.js';
@@ -8,6 +8,7 @@ import { loadWeeklyTopTenInPredictions, loadCumulativeTopTenInPredictions, saveP
 export async function postPredictions(groupedPairings) {
     const predictionsChannel = await channels.fetch(process.env.predictionsChannelId);
     for (const pairingSet of groupedPairings.values()) {
+        wait(1000);
         await postPredictionsForMatchup(predictionsChannel, pairingSet);
     }
 }

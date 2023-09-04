@@ -153,3 +153,7 @@ export function weekName(week) {
         default: return 'go yell at jumpy to fix this';
     }
 }
+
+export async function wait(time) {
+    return new Promise((resolve) => setTimeout(resolve, time));
+}

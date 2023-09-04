@@ -44,11 +44,13 @@ export const LINEUP_COMMAND = {
                 .addUserOption(option =>
                     option
                         .setName('slot6')
-                        .setDescription('Player in slot 6'))
+                        .setDescription('Player in slot 6')
+                        .setRequired(true))
                 .addUserOption(option =>
                     option
                         .setName('slot7')
-                        .setDescription('Player in slot 7'))
+                        .setDescription('Player in slot 7')
+                        .setRequired(true))
                 .addUserOption(option =>
                     option
                         .setName('slot8')
