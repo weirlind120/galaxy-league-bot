@@ -185,7 +185,7 @@ async function calculateStandings(interaction) {
             await postStandings(nextStandingsWeek, standings);
 
             if (nextStandingsWeek === currentSeason.regular_weeks) {
-                await setUpPlayoff(standings);
+                await setUpPlayoff();
             }
         }
         else {
@@ -227,11 +227,11 @@ function prettyTextStanding(rank, standing) {
     return `${rightAlign(6, rank)}|${rightAlign(8, standing.points)}|${rightAlign(6, standing.battle_differential)}|${rightAlign(3, standing.wins)}|${rightAlign(3, standing.losses)}|${rightAlign(3, standing.ties)}| ${standing.teamName}`;
 }
 
-async function setUpPlayoff(standings) {
+async function setUpPlayoff() {
     // I'm sure there's an algorithm but I do not feel like figuring it out right now
     if (currentSeason.playoff_size === 4) {
         await saveOneNewMatchup('sf1', standings[0].teamId, standings[3].teamId, currentSeason.number, currentSeason.current_week + 1);
-        await saveOneNewMatchup('sf2', standings[1].teamId, standings[3].teamId, currentSeason.number, currentSeason.current_week + 1);
+        await saveOneNewMatchup('sf2', standings[1].teamId, standings[2].teamId, currentSeason.number, currentSeason.current_week + 1);
     }
 
     await hideAllRegularRooms();
@@ -242,7 +242,7 @@ async function hideAllRegularRooms() {
     const allTeamSnowflakes = (await loadTeams()).map(team => team.discord_snowflake);
 
     for (let i = 1; i < 6; i++) {
-        const matchRoom = await channels.fetch(eval(`process.env.matchChannel${pairingSet[0].room}Id`));
+        const matchRoom = await channels.fetch(eval(`process.env.matchChannel${i}Id`));
 
         const permissionOverwrites = matchRoom.permissionOverwrites.cache
             .filter(overwrite => !allTeamSnowflakes.includes(overwrite.id))
@@ -252,7 +252,7 @@ async function hideAllRegularRooms() {
 }
 
 async function advancePlayoffWinners(teamWins) {
-    const matchups = await getMatchups(currentSeason.current_week);
+    const matchups = await loadAllMatchups(currentSeason.number, currentSeason.current_week);
     const winners = [];
 
     matchups.forEach(matchup => {
@@ -279,7 +279,7 @@ async function advancePlayoffWinners(teamWins) {
 async function announceNextPlayoffRound() {
     const mainRoom = await channels.fetch(process.env.mainRoomId);
 
-    const nextRoundMatchups = await getMatchups(currentSeason.current_week + 1);
+    const nextRoundMatchups = await loadAllMatchups(currentSeason.number, currentSeason.current_week + 1);
     const playoffAnnouncement = 'Next playoff round will be:\n\n'.concat(
         ...nextRoundMatchups.map(matchup => `${roleMention(matchup.leftSnowflake)} vs ${roleMention(matchup.rightSnowflake)}\n`),
         '\nWork out your slot counts with the opposing captain, and submit lineups with /lineup submit.'
