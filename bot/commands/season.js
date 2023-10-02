@@ -312,7 +312,7 @@ async function makeWinnerRole(winningTeamId, winningTeamSnowflake) {
     const lastWinnerPosition = (await mushiLeagueGuild.roles.cache.find(r => r.name === `Season ${currentSeason.number - 1} Winner`)).position;
 
     const winnerRole = await mushiLeagueGuild.roles.create({
-        name: `Season ${currentSeason.number} winner`,
+        name: `Season ${currentSeason.number} Winner`,
         color: color,
         position: lastWinnerPosition + 1,
     });
@@ -486,7 +486,7 @@ async function setUpRegularRoom(pairingSet, matchRoom, allTeamSnowflakes) {
 
 async function setUpPlayoffRoom(pairingSet, matchRoom, allTeamSnowflakes) {
     const permissionOverwrites = matchRoom.permissionOverwrites.cache
-        .map(overwrite => ({ id: overwrite.id, deny: overwrite.deny, allow: overwrite.allow }))
+        .map(overwrite => ({ id: overwrite.id, deny: overwrite.deny, allow: overwrite.allow, type: overwrite.type }))
         .filter(overwrite => !allTeamSnowflakes.includes(overwrite.id))
         .concat([
             {
