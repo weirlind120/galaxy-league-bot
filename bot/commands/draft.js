@@ -274,7 +274,7 @@ async function withdrawTeam(interaction) {
 
         const rosterSize = (await loadRosterSize(teamData.id, false)).size;
 
-        const teamIsUp = (await loadNextPickTeam()).discord_snowflake === teamData.id;
+        const teamIsUp = (await loadNextPickTeam()).discord_snowflake === teamData.teamSnowflake;
 
         return { submitter, team: teamData, rosterSize, overriddenTeam, teamIsUp };
     }
