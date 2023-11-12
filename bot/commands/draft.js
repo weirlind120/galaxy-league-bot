@@ -290,7 +290,7 @@ async function withdrawTeam(interaction) {
     }
 
     async function onConfirm(data) {
-        await saveWithdrawTeam(data.team.teamId);
+        await saveWithdrawTeam(data.team.id);
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
