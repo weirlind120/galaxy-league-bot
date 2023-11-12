@@ -167,6 +167,11 @@ async function pickPlayer(interaction) {
 
         const maxStars = fixFloat(await maxStarsNext(team.teamId, nextPickTeam.round));
         let playerData = await loadPlayerFromSnowflake(player.id);
+
+        if (!playerData) {
+            return { failure: `${userMention(player.id)} is not in the pool` };
+        }
+
         playerData.stars = fixFloat(playerData.stars);
         playerData.roles = player.roles;
 
@@ -233,10 +238,14 @@ async function notifyAfterPick() {
         });
     }
     else {
-        const nextPickTeam = await loadNextPickTeam();
-        const maxStars = fixFloat(await maxStarsNext(nextPickTeam.teamId, nextPickTeam.round));
-        await sendDraftPing(nextPickTeam.discord_snowflake, maxStars);
+        await pingNextTeam();
     }
+}
+
+async function pingNextTeam() {
+    const nextPickTeam = await loadNextPickTeam();
+    const maxStars = fixFloat(await maxStarsNext(nextPickTeam.teamId, nextPickTeam.round));
+    await sendDraftPing(nextPickTeam.discord_snowflake, maxStars);
 }
 
 async function withdrawTeam(interaction) {
@@ -265,7 +274,9 @@ async function withdrawTeam(interaction) {
 
         const rosterSize = (await loadRosterSize(teamData.id, false)).size;
 
-        return { submitter, team: teamData, rosterSize, overriddenTeam };
+        const teamIsUp = (await loadNextPickTeam()).discord_snowflake === teamData.id;
+
+        return { submitter, team: teamData, rosterSize, overriddenTeam, teamIsUp };
     }
 
     function verifier(data) {
@@ -291,6 +302,10 @@ async function withdrawTeam(interaction) {
 
     async function onConfirm(data) {
         await saveWithdrawTeam(data.team.id);
+
+        if (teamIsUp) {
+            await pingNextTeam();
+        }
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
