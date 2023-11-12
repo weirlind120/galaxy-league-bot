@@ -85,9 +85,9 @@ async function newSeason(interaction) {
         const { length, playoffSize } = data;
         await saveDropAllPlayers();
         await saveStarPointsToRatings(currentSeason.number);
-        await makeSeasonAndWeeks(currentSeason.number + 1, length, playoffSize);
-        await makeRegSeasonPairings(currentSeason.number + 1, length);
-        await saveInitialStandings(currentSeason.number + 1);
+        await makeSeasonAndWeeks(15, length, playoffSize);
+        await makeRegSeasonPairings(15, length);
+        await saveInitialStandings(15);
 
         setCurrentSeason();
     }

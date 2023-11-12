@@ -40,15 +40,14 @@ async function help(interaction) {
             `\n        ${bold('report')}   reports the result of a played set` +
             `\n    ${bold('/data')}` +
             `\n        ${bold('scout')}   get a player's past replays` +
+            `\n    ${bold('/draft')}` +
+            `\n        ${bold('list')}   see all available players in star order` +
             `\n    ${bold('/help')}   ...this`;
 
         if (isCaptain || isCoach) {
             helpText +=
                 '\n' +
                 `\n${italic('coach or captain only')}` +
-                `\n    ${bold('/draft')}` +
-                `\n        ${bold('list')}   see all available players in star order` +
-                `\n        ${bold('pick')}   add an available player to your team`; +
                 `\n    ${bold('/lineup')}` +
                 `\n        ${bold('remind')}   see your lineup for next week`
         }
@@ -59,7 +58,10 @@ async function help(interaction) {
                 `\n${italic('mod, coach, or captain only')}` +
                 `\n    ${bold('/lineup')}` +
                 `\n        ${bold('submit')}   submit a lineup for next week` +
-                `\n        ${bold('substitution')}   perform a substitution in the current week (or past week, for an extension)`;
+                `\n        ${bold('substitution')}   perform a substitution in the current week (or past week, for an extension)` +
+                `\n    ${bold('/draft')}` +
+                `\n        ${bold('pick')}   pick the next player to be drafted` +
+                `\n        ${bold('withdraw')}   withdraw a team from the draft`;
         }
 
         if (isMod) {
@@ -86,6 +88,7 @@ async function help(interaction) {
                 '\n' +
                 `\n${italic('admin only')}` +
                 `\n    ${bold('/draft')}` +
+                `\n        ${bold('start')}   so far all this does is ping the first drafter tbh` +
                 `\n        ${bold('finalize')}   initialize stat tracking for teams once they're finalized` +
                 `\n    ${bold('/season')}` +
                 `\n        ${bold('new')}   drop all players from teams, update star points, make round robin matchups` +

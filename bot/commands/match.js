@@ -363,11 +363,12 @@ async function linkMatch(interaction) {
             allowedMentions: { roles: [process.env.spectatorRoleId] }
         });
 
-        const matchChannel = await channels.fetch(eval(`process.env.matchChannel${pairing.room}Id`));
-        await matchChannel.send({
-            content: linkMessage,
-            allowedMentions: { parse: [] }
-        });
+        if (matchRoom) {
+            await matchRoom.send({
+                content: linkMessage,
+                allowedMentions: { parse: [] }
+            });
+        }
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);

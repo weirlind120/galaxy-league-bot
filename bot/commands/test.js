@@ -5,6 +5,7 @@ import { loadAllPlayersOnTeam } from '../../database/player.js';
 import { rightAlign } from './util.js';
 import { postPredictionStandings, updatePrediction, changePredictionsPlayer, postPredictions } from '../features/predictions.js';
 import { setScheduledTime, changeScheduledPlayer, postScheduling } from '../features/schedule.js';
+import { saveDraftSetup } from '../../database/draft.js';
 
 export const TEST_COMMAND = {
     data: new SlashCommandBuilder()
@@ -13,8 +14,8 @@ export const TEST_COMMAND = {
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
     async execute(interaction) {
-        await postPredictionStandings(14, 8);
+        await saveDraftSetup(15, 15, [11, 15, 13, 9, 1, 3, 6, 8, 14, 12, 7, 4]);
 
-        await interaction.reply('done!');
+        await interaction.reply({ content: 'done!', ephemeral: true });
     }
 }

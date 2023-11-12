@@ -304,8 +304,12 @@ async function assignPlayer(interaction) {
 
         roles = roles.filter(role => role !== existingPlayer.roleSnowflake && role !== existingPlayer.teamSnowflake);
 
-        roles.push(newRole.id);
-        roles.push(newTeam.id);
+        if (!roles.includes(newRole.id)) {
+            roles.push(newRole.id);
+        }
+        if (!roles.includes(newTeam.id)) {
+            roles.push(newTeam.id);
+        }
 
         player.roles.set(roles);
 
