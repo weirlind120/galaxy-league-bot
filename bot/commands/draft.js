@@ -290,7 +290,7 @@ async function withdrawTeam(interaction) {
     }
 
     async function onConfirm(data) {
-        await saveWithdrawTeam(data.team.id);
+        await saveWithdrawTeam(data.team.teamId);
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
@@ -308,7 +308,7 @@ async function startDraft(interaction) {
             return { failure: 'There does not seem to be a draft upcoming' };
         }
 
-        const maxStars = await maxStarsNext(firstPickTeam.teamId, firstPickTeam.round);
+        const maxStars = fixFloat(await maxStarsNext(firstPickTeam.teamId, firstPickTeam.round));
 
         return { firstPickTeam, maxStars };
     }
