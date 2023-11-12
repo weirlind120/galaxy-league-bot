@@ -303,7 +303,7 @@ async function withdrawTeam(interaction) {
     async function onConfirm(data) {
         await saveWithdrawTeam(data.team.id);
 
-        if (teamIsUp) {
+        if (data.teamIsUp) {
             await pingNextTeam();
         }
     }
