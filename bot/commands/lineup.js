@@ -67,6 +67,14 @@ export const LINEUP_COMMAND = {
                     option
                         .setName('slot11')
                         .setDescription('Player in slot 11'))
+                .addUserOption(option =>
+                    option
+                        .setName('slot12')
+                        .setDescription('Player in slot 12'))
+                .addUserOption(option =>
+                    option
+                        .setName('slot13')
+                        .setDescription('Player in slot 13'))
                 .addRoleOption(option =>
                     option
                         .setName('team')
@@ -145,7 +153,9 @@ async function submitLineup(interaction) {
             interaction.options.getMember('slot8'),
             interaction.options.getMember('slot9'),
             interaction.options.getMember('slot10'),
-            interaction.options.getMember('slot11')
+            interaction.options.getMember('slot11'),
+            interaction.options.getMember('slot12'),
+            interaction.options.getMember('slot13')
         ].filter(member => !!member);
 
         if (!userIsCaptain(interaction.member) && !userIsCoach(interaction.member) && !teamOption) {
