@@ -5,7 +5,7 @@ export async function loadCurrentSeason() {
 }
 
 export async function saveNewSeason(season, length, playoffSize) {
-    await db.run('INSERT INTO season (number, current_week, regular_weeks, playoff_size) VALUES (?, 1, ?, ?)', season, length, playoffSize);
+    await db.run('INSERT INTO season (number, current_week, regular_weeks, playoff_size) VALUES (?, 0, ?, ?)', season, length, playoffSize);
 }
 
 export async function saveAdvanceWeek(season, week) {
