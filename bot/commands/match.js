@@ -349,7 +349,7 @@ async function linkMatch(interaction) {
     }
 
     async function onConfirm(data) {
-        const { gameLink, number, ping, pairing } = data;
+        const { gameLink, number, ping, pairing, matchRoom } = data;
 
         const leftPlayerText = `(${roleMention(pairing.leftTeamSnowflake)}) ${userMention(pairing.leftPlayerSnowflake)}`;
         const rightPlayerText = `${userMention(pairing.rightPlayerSnowflake)} (${roleMention(pairing.rightTeamSnowflake)})`;
