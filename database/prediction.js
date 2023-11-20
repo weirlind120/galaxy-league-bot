@@ -28,14 +28,16 @@ export async function loadWeeklyTopTenInPredictions(season, week) {
 
 export async function savePredictionsToDatabase(pairingId, predictions, leftPlayer, rightPlayer) {
     const leftPlayerPredictions = predictions[leftPlayer].map(reacter => `(${pairingId}, ${reacter}, ${leftPlayer})`).join(',\n');
-    const separator = leftPlayerPredictions === '' ? '' : ',\n';
     const rightPlayerPredictions = predictions[rightPlayer].map(reacter => `(${pairingId}, ${reacter}, ${rightPlayer})`).join(',\n');
+    const separator = leftPlayerPredictions && rightPlayerPredictions ? ',\n' : '';
 
     const insertQuery = 'INSERT INTO prediction (pairing, predictor_snowflake, predicted_winner) VALUES\n'.concat(
         leftPlayerPredictions,
         separator,
         rightPlayerPredictions
     );
+
+    console.log(insertQuery);
 
     await db.run(insertQuery);
 }
