@@ -197,12 +197,14 @@ async function scheduleMatch(interaction) {
                 return { failure: 'Couldn\'t parse the date. Please either specify that it\'s inexact, or pass it in formatted like "Sunday 4:00 PM", "Sunday 4 PM", or "Sunday 16:00"' };
             }
 
-            if (localDate < Date.now()) {
-                localDate = add(localDate, { weeks: 1 });
+            const botTimezone = localDate.getTimezoneOffset() / -60;
+            const botTime = sub(localDate, { hours: timezone - botTimezone });
+
+            if (botTime < Date.now()) {
+                botTime = add(botTime, { weeks: 1 });
             }
 
-            const botTimezone = localDate.getTimezoneOffset() / -60;
-            dateString = time(sub(localDate, { hours: timezone - botTimezone }));
+            dateString = time(botTime);
         }
 
         return { playerSnowflake: player.id, dateString, timezone, inexact, pairing };

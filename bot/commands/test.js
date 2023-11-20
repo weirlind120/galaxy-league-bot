@@ -24,21 +24,21 @@ export const TEST_COMMAND = {
 }
 
 async function postStandings(nextStandingsWeek, standings) {
-  const mainRoom = await channels.fetch(process.env.mainRoomId);
+	const mainRoom = await channels.fetch(process.env.mainRoomId);
 
-  const standingsText = bold(`Standings at the end of week ${nextStandingsWeek}:\n\n`)
-    .concat(
-      codeBlock(''.concat(
-        ' Rank | Points |  BD  | W | L | T | Team \n',
-        '------|--------|------|---|---|---|------\n',
-        standings.map((standing, index) => prettyTextStanding(index + 1, standing)).join('\n')
-      )
-      )
-    );
+	const standingsText = bold(`Standings at the end of week ${nextStandingsWeek}:\n\n`)
+		.concat(
+			codeBlock(''.concat(
+				' Rank | Points |  BD  | W | L | T | Team \n',
+				'------|--------|------|---|---|---|------\n',
+				standings.map((standing, index) => prettyTextStanding(index + 1, standing)).join('\n')
+			)
+			)
+		);
 
-  await mainRoom.send(standingsText);
+	await mainRoom.send(standingsText);
 }
 
 function prettyTextStanding(rank, standing) {
-  return `${rightAlign(6, rank)}|${rightAlign(8, standing.points)}|${rightAlign(6, standing.battle_differential)}|${rightAlign(3, standing.wins)}|${rightAlign(3, standing.losses)}|${rightAlign(3, standing.ties)}| ${standing.teamName}`;
+	return `${rightAlign(6, rank)}|${rightAlign(8, standing.points)}|${rightAlign(6, standing.battle_differential)}|${rightAlign(3, standing.wins)}|${rightAlign(3, standing.losses)}|${rightAlign(3, standing.ties)}| ${standing.teamName}`;
 }
