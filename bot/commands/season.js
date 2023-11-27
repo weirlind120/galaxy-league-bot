@@ -532,6 +532,7 @@ const rules = 'A few rules to remember:\n' +
               'You must attempt scheduling before the weekend to be eligible for an activity win\n' +
               'All replays MUST be posted in this channel\n' +
               'We expect you to be helpful when scheduling with your opponent\n' +
-              'Accuracy lowering moves (Sand Attack, Flash, Smokescreen, Mud-Slap, Kinesis, Muddy Water) are banned. Clicking one = immediate game loss.' +
+              'Accuracy lowering moves (Sand Attack, Flash, Smokescreen, Mud-Slap, Kinesis, Muddy Water) are banned. Clicking one = immediate game loss.\n' +
+              'Swagger is banned too. Clicking it = immediate game loss.\n' +
               '\n' + 
               'GL HF!';
