@@ -198,7 +198,7 @@ async function scheduleMatch(interaction) {
             }
 
             const botTimezone = localDate.getTimezoneOffset() / -60;
-            const botTime = sub(localDate, { hours: timezone - botTimezone });
+            let botTime = sub(localDate, { hours: timezone - botTimezone });
 
             if (botTime < Date.now()) {
                 botTime = add(botTime, { weeks: 1 });

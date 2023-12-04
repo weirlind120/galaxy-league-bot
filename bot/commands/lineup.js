@@ -200,6 +200,7 @@ async function submitLineup(interaction) {
 
             if (player.teamSnowflake !== teamSnowflake) {
                 failures.push(`You submitted ${userMention(player.discord_snowflake)} in your lineup, but they're not on ${roleMention(teamSnowflake)}`);
+                continue;
             }
             if (player.roleName === 'Coach') {
                 failures.push(`You submitted ${userMention(player.discord_snowflake)} in your lineup, but they're a coach and can't play.`);
@@ -212,7 +213,7 @@ async function submitLineup(interaction) {
                 for (let j = i + 1; j < lineup.length; j++) {
                     const lowerPlayer = lineup[j];
 
-                    if ((fixFloat(lowerPlayer.stars) - fixFloat(player.stars)) > 0.7) {
+                    if (fixFloat(lowerPlayer.stars - player.stars) > 0.7) {
                         const playerIndex = roster.findIndex(p => p.id === player.id);
                         let nextStrongestPlayerIndex = playerIndex - 1;
 
