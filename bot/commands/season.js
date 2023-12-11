@@ -14,7 +14,7 @@ import { saveNewWeeks } from '../../database/week.js';
 import { saveMatchRoomMessageId, saveOneNewMatchup, loadAllMatchups, loadMatchupsMissingLineups, loadOldPairingMessage } from '../../database/matchup.js';
 import { saveInitialStandings, loadStandingWeeksSoFar, loadStandings, saveStandingsUpdate } from '../../database/standing.js';
 import { loadTeams, loadActiveTeams, loadTeam } from '../../database/team.js';
-import { saveDropAllPlayers, saveStarPointsToRatings, loadAllPlayersOnTeam, loadPlayerFromSnowflake } from '../../database/player.js';
+import { saveDropAllPlayers, saveStarPointsToRatings, loadAllPlayersOnTeam, loadPlayerFromSnowflake, loadPlayersOnTeamInStarOrder } from '../../database/player.js';
 import { loadAllPairings, loadAllPairingResults, loadOpenPairings } from '../../database/pairing.js';
 import { savePlayerStatUpdate } from '../../database/pstat.js';
 
@@ -327,8 +327,9 @@ async function nextWeek(interaction) {
     async function dataCollector(interaction) {
         const pairingsNeedingExtension = await loadOpenPairings(currentSeason.number, currentSeason.current_week);
         const matchupsMissingLineups = await loadMatchupsMissingLineups(currentSeason.number, currentSeason.current_week + 1);
+        const userForAutoLineups = await loadPlayerFromSnowflake(interaction.user.id);
 
-        return { pairingsNeedingExtension, matchupsMissingLineups };
+        return { pairingsNeedingExtension, matchupsMissingLineups, userForAutoLineups };
     }
 
     function verifier(data) {
@@ -353,12 +354,12 @@ async function nextWeek(interaction) {
     }
 
     async function onConfirm(data) {
-        const { pairingsNeedingExtension, matchupsMissingLineups } = data;
+        const { pairingsNeedingExtension, matchupsMissingLineups, userForAutoLineups } = data;
         await advanceCurrentWeek();
         await updateMatchReportsHeader();
         await createExtensionRooms(pairingsNeedingExtension);
         for (const matchup of matchupsMissingLineups) {
-            await autoGenerateLineup(matchup);
+            await autoGenerateLineup(matchup, userForAutoLineups);
         }
         const groupedPairings = groupPairingsByRoom(await loadAllPairings(currentSeason.number, currentSeason.current_week));
         await updateMatchRooms(groupedPairings);
@@ -433,11 +434,10 @@ async function notifyPairings(pairingSet, extensionRoom) {
     await extensionPost.pin();
 }
 
-async function autoGenerateLineup(matchup, interaction) {
+async function autoGenerateLineup(matchup, userForAutoLineups) {
     const slots = matchup.slots || currentSeason.min_lineup;
-    const lineup = (await loadPlayersOnTeamInStarOrder(matchup.teamId)).slice(0, slots);
-    const submitter = await loadPlayerFromSnowflake(interaction.user.id);
-    await commitLineup(matchup, matchup.rigged_count, lineup, submitter);
+    const lineup = (await loadPlayersOnTeamInStarOrder(matchup.submittingTeamId)).slice(0, slots);
+    await commitLineup(matchup, matchup.rigged_count, lineup, userForAutoLineups);
 }
 
 async function updateMatchRooms(groupedPairings) {

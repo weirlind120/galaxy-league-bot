@@ -31,13 +31,13 @@ export async function loadAllMatchups(season, week) {
 
 export async function loadMatchupsMissingLineups(season, week) {
     const query =
-        'SELECT team.id AS teamId, team.discord_snowflake AS delinquentTeamSnowflake, matchup.left_team, matchup.right_team, matchup.slots AS matchupSlots, matchup.rigged_count FROM matchup \
+        'SELECT matchup.id, team.id AS submittingTeamId, team.discord_snowflake AS delinquentTeamSnowflake, matchup.left_team, matchup.right_team, matchup.slots AS matchupSlots, matchup.rigged_count FROM matchup \
          LEFT JOIN pairing ON pairing.matchup = matchup.id \
          INNER JOIN team ON team.id = matchup.left_team \
          INNER JOIN week ON week.id = matchup.week \
          WHERE pairing.left_player IS NULL AND week.season = ? AND week.number = ? \
          UNION \
-         SELECT team.id AS teamId, team.discord_snowflake AS delinquentTeamSnowflake, matchup.left_team, matchup.right_team, matchup.slots AS matchupSlots, matchup.rigged_count FROM matchup \
+         SELECT matchup.id, team.id AS submittingTeamId, team.discord_snowflake AS delinquentTeamSnowflake, matchup.left_team, matchup.right_team, matchup.slots AS matchupSlots, matchup.rigged_count FROM matchup \
          LEFT JOIN pairing ON pairing.matchup = matchup.id \
          INNER JOIN team ON team.id = matchup.right_team \
          INNER JOIN week on week.id = matchup.week \
