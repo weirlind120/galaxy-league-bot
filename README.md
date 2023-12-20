@@ -1,3 +1,3 @@
-Simple discord bot to help me manage mushi league.
+Simple discord bot to help me manage galaxy league.
 
 Real readme maybe coming later once the bot is done...
