@@ -6,7 +6,6 @@ import { saveInitialPstats } from '../../database/pstat.js';
 import { savePostDraftRosters } from '../../database/roster.js';
 import { loadNextPickTeam, saveDraftPick, saveWithdrawTeam, loadNextPickRoundForTeam, saveDraftSetup } from '../../database/draft.js';
 import { loadTeamFromSnowflake } from '../../database/team.js';
-import { tr } from 'date-fns/locale';
 
 export const DRAFT_COMMAND = {
     data: new SlashCommandBuilder()
@@ -53,7 +52,7 @@ export const DRAFT_COMMAND = {
                     option
                         .setName('order')
                         .setDescription('order of team picks in format "5,4,1,2,3,6" (this is ghetto af)')
-                        .setRequired(true))),
+                        .setRequired(true)))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('start')
@@ -330,7 +329,7 @@ async function initDraft(interaction) {
             return { failure: 'You must be an owner to use this command.' };
         }
 
-        const teamOrder = interaction.options.getString('order').split(',').map(id => await loadteam(id));
+        const teamOrder = interaction.options.getString('order').split(',').map(async id => await loadteam(id));
 
         return { teamOrder };
     }
