@@ -4,8 +4,9 @@ import { currentSeason, channels } from '../globals.js';
 import { loadPlayerFromSnowflake, loadRosterSize, savePlayerChange, loadUndraftedPlayers } from '../../database/player.js';
 import { saveInitialPstats } from '../../database/pstat.js';
 import { savePostDraftRosters } from '../../database/roster.js';
-import { loadNextPickTeam, saveDraftPick, saveWithdrawTeam, loadNextPickRoundForTeam } from '../../database/draft.js';
+import { loadNextPickTeam, saveDraftPick, saveWithdrawTeam, loadNextPickRoundForTeam, saveDraftSetup } from '../../database/draft.js';
 import { loadTeamFromSnowflake } from '../../database/team.js';
+import { tr } from 'date-fns/locale';
 
 export const DRAFT_COMMAND = {
     data: new SlashCommandBuilder()
@@ -46,6 +47,15 @@ export const DRAFT_COMMAND = {
                         .setDescription('team to withdraw, defaults to your own')))
         .addSubcommand(subcommand =>
             subcommand
+                .setName('init')
+                .setDescription('sets draft order')
+                .addStringOption(option =>
+                    option
+                        .setName('order')
+                        .setDescription('order of team picks in format "5,4,1,2,3,6" (this is ghetto af)')
+                        .setRequired(true))),
+        .addSubcommand(subcommand =>
+            subcommand
                 .setName('start')
                 .setDescription('starts the draft'))
         .addSubcommand(subcommand =>
@@ -63,6 +73,9 @@ export const DRAFT_COMMAND = {
                 break;
             case 'withdraw':
                 await withdrawTeam(interaction);
+                break;
+            case 'init':
+                await initDraft(interaction);
                 break;
             case 'start':
                 await startDraft(interaction);
@@ -306,6 +319,39 @@ async function withdrawTeam(interaction) {
         if (data.teamIsUp) {
             await pingNextTeam();
         }
+    }
+
+    await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
+}
+
+async function initDraft(interaction) {
+    async function dataCollector(interaction) {
+        if (!userIsOwner(interaction.member)) {
+            return { failure: 'You must be an owner to use this command.' };
+        }
+
+        const teamOrder = interaction.options.getString('order').split(',').map(id => await loadteam(id));
+
+        return { teamOrder };
+    }
+
+    function verifier(data) {
+        const { teamOrder } = data;
+        let failures = [], prompts = [];
+
+        prompts.push(`Initialize draft in order ${teamOrder.map(team => roleMention(team.discord_snowflake)).join(', ')}?`);
+
+        const confirmLabel = 'Confirm Initialize Draft';
+        const confirmMessage = `Draft initialized`;
+        const cancelMessage = `Draft not initialized`;
+
+        return [failures, prompts, confirmLabel, confirmMessage, cancelMessage];
+    }
+
+    async function onConfirm(data) {
+        const { teamOrder } = data;
+
+        await saveDraftSetup(currentSeason.number, currentSeason.max_roster, teamOrder.map(team => team.id));
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
