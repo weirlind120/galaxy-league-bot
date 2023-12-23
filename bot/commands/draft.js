@@ -53,7 +53,7 @@ export const DRAFT_COMMAND = {
                     option
                         .setName('order')
                         .setDescription('order of team picks in format "5,4,1,2,3,6" (this is ghetto af)')
-                        .setRequired(true))),
+                        .setRequired(true)))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('start')
