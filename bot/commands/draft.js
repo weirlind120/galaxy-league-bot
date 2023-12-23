@@ -329,7 +329,11 @@ async function initDraft(interaction) {
             return { failure: 'You must be an owner to use this command.' };
         }
 
-        const teamOrder = interaction.options.getString('order').split(',').map(async id => await loadTeam(id));
+        const order = interaction.options.getString('order').split(',');
+        let teamOrder = [];
+        for (const id of order) {
+            teamOrder.push(await loadTeam(id));
+		}
 
         return { teamOrder };
     }
