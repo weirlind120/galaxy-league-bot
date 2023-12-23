@@ -5,7 +5,7 @@ import { loadPlayerFromSnowflake, loadRosterSize, savePlayerChange, loadUndrafte
 import { saveInitialPstats } from '../../database/pstat.js';
 import { savePostDraftRosters } from '../../database/roster.js';
 import { loadNextPickTeam, saveDraftPick, saveWithdrawTeam, loadNextPickRoundForTeam, saveDraftSetup } from '../../database/draft.js';
-import { loadTeamFromSnowflake } from '../../database/team.js';
+import { loadTeamFromSnowflake, loadTeam } from '../../database/team.js';
 
 export const DRAFT_COMMAND = {
     data: new SlashCommandBuilder()
@@ -329,7 +329,7 @@ async function initDraft(interaction) {
             return { failure: 'You must be an owner to use this command.' };
         }
 
-        const teamOrder = interaction.options.getString('order').split(',').map(async id => await loadteam(id));
+        const teamOrder = interaction.options.getString('order').split(',').map(async id => await loadTeam(id));
 
         return { teamOrder };
     }
