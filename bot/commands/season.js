@@ -234,6 +234,11 @@ async function setUpPlayoff() {
         await saveOneNewMatchup('sf2', standings[1].teamId, standings[2].teamId, currentSeason.number, currentSeason.current_week + 1);
     }
 
+    if (currentSeason.playoff_size === 6) {
+        await saveOneNewMatchup('sf1', standings[2].teamId, standings[5].teamId, currentSeason.number, currentSeason.current_week + 1);
+        await saveOneNewMatchup('sf2', standings[3].teamId, standings[4].teamId, currentSeason.number, currentSeason.current_week + 1);
+	}
+
     await hideAllRegularRooms();
     await announceNextPlayoffRound();
 }
@@ -266,14 +271,18 @@ async function advancePlayoffWinners(teamWins) {
         }
     });
 
-    if (winners.length === 1) {
+    if (weekName(currentSeason.current_week) === 'Finals') {
         await declareWinner(winners[0]);
+	}
+    if (weekName(currentSeason.current_week) === 'Semifinals') {
+        if (currentSeason.playoff_size === 4 || currentSeason.playoff_size === 6) {
+            await saveOneNewMatchup('finals', winners[0], winners[1], currentSeason.number, currentSeason.current_week + 1);
+            announceNextPlayoffRound();
+		}
     }
-    // again, i'm sure there's an algorithm, but I don't feel like figuring it out right now.
-    else if (winners.length === 2) {
-        await saveOneNewMatchup('finals', winners[0], winners[1], currentSeason.number, currentSeason.current_week + 1);
-        announceNextPlayoffRound();
-    }
+    if (weekName(currentSeason.current_week) === 'Quarterfinals') {
+        // Do this ASAP
+	}
 }
 
 async function announceNextPlayoffRound() {
