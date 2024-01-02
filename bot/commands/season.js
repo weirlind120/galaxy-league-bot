@@ -185,7 +185,7 @@ async function calculateStandings(interaction) {
             await postStandings(nextStandingsWeek, standings);
 
             if (nextStandingsWeek === currentSeason.regular_weeks) {
-                await setUpPlayoff();
+                await setUpPlayoff(standings);
             }
         }
         else {
