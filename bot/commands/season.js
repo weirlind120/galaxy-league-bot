@@ -277,14 +277,15 @@ async function advancePlayoffWinners(teamWins) {
     if (weekName(currentSeason.current_week) === 'Semifinals') {
         if (currentSeason.playoff_size === 4 || currentSeason.playoff_size === 6) {
             await saveOneNewMatchup('finals', winners[0], winners[1], currentSeason.number, currentSeason.current_week + 1);
-            announceNextPlayoffRound();
+            await announceNextPlayoffRound();
 		}
     }
     if (weekName(currentSeason.current_week) === 'Quarterfinals') {
         if (currentSeason.playoff_size === 6) {
             const byeTeams = await loadTopTeams(currentSeason.number, 2);
-            await saveOneNewMatchup('sf1', byeTeams[0], winners[1], currentSeason.number, currentSeason.current_week + 1);
-            await saveOneNewMatchup('sf2', byeTeams[1], winners[0], currentSeason.number, currentSeason.current_week + 1);
+            await saveOneNewMatchup('sf1', byeTeams[0].teamId, winners[1], currentSeason.number, currentSeason.current_week + 1);
+            await saveOneNewMatchup('sf2', byeTeams[1].teamId, winners[0], currentSeason.number, currentSeason.current_week + 1);
+            await announceNextPlayoffRound();
 		}
 	}
 }
