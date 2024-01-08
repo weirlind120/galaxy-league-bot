@@ -12,7 +12,7 @@ import { postScheduling } from '../features/schedule.js';
 import { saveNewSeason, saveAdvanceWeek } from '../../database/season.js';
 import { saveNewWeeks } from '../../database/week.js';
 import { saveMatchRoomMessageId, saveOneNewMatchup, loadAllMatchups, loadMatchupsMissingLineups, loadOldPairingMessage } from '../../database/matchup.js';
-import { saveInitialStandings, loadStandingWeeksSoFar, loadStandings, saveStandingsUpdate } from '../../database/standing.js';
+import { saveInitialStandings, loadStandingWeeksSoFar, loadStandings, saveStandingsUpdate, loadTopTeams } from '../../database/standing.js';
 import { loadTeams, loadActiveTeams, loadTeam } from '../../database/team.js';
 import { saveDropAllPlayers, saveStarPointsToRatings, loadAllPlayersOnTeam, loadPlayerFromSnowflake, loadPlayersOnTeamInStarOrder } from '../../database/player.js';
 import { loadAllPairings, loadAllPairingResults, loadOpenPairings } from '../../database/pairing.js';
@@ -281,7 +281,11 @@ async function advancePlayoffWinners(teamWins) {
 		}
     }
     if (weekName(currentSeason.current_week) === 'Quarterfinals') {
-        // Do this ASAP
+        if (currentSeason.playoff_size === 6) {
+            const byeTeams = await loadTopTeams(currentSeason.number, 2);
+            await saveOneNewMatchup('sf1', byeTeams[0], winners[1], currentSeason.number, currentSeason.current_week + 1);
+            await saveOneNewMatchup('sf2', byeTeams[1], winners[0], currentSeason.number, currentSeason.current_week + 1);
+		}
 	}
 }
 
