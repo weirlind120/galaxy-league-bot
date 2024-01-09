@@ -1,9 +1,16 @@
-import { SlashCommandBuilder, italic, userMention } from "discord.js";
-import { currentSeason } from "../globals.js";
-import { baseFunctionlessHandler } from "./util.js";
+import {
+  SlashCommandBuilder,
+  italic,
+  userMention,
+  roleMention,
+  codeBlock,
+} from "discord.js";
+import { baseFunctionlessHandler, rightAlign, fixFloat } from "./util.js";
 
 import { loadReplays } from "../../database/pairing.js";
 import { loadTeamData } from "../../database/team.js";
+
+import { currentSeason } from "../globals.js";
 
 export const DATA_COMMAND = {
   data: new SlashCommandBuilder()
@@ -40,6 +47,12 @@ export const DATA_COMMAND = {
             .setDescription("the team to get data for")
             .setRequired(true)
         )
+        .addNumberOption((option) =>
+          option
+            .setName("season")
+            .setDescription("the season to get data for (defaults to current)")
+            .setRequired(false)
+        )
     ),
   async execute(interaction) {
     switch (interaction.options.getSubcommand()) {
@@ -56,8 +69,10 @@ export const DATA_COMMAND = {
 async function getTeamData(interaction) {
   async function dataCollector(interaction) {
     const team = interaction.options.getRole("team");
+    const season =
+      interaction.options.getNumber("season") || currentSeason.number;
 
-    const playerData = await loadTeamData(team.id);
+    const playerData = await loadTeamData(team.id, season);
 
     return { team, playerData };
   }
@@ -68,7 +83,7 @@ async function getTeamData(interaction) {
 
     if (playerData.length === 0) {
       failures.push(
-        `No data found for ${userMention(team.id)} from the current season.`
+        `No data found for ${roleMention(team.id)} from the current season.`
       );
     }
 
@@ -79,29 +94,27 @@ async function getTeamData(interaction) {
     const { team, playerData } = data;
 
     function makePlayerIntoRow(p) {
-      return p.name
-        .padEnd(29, " ")
-        .concat("|     ")
-        .concat(p.wins)
-        .concat("|         ")
-        .concat(p.act_wins)
-        .concat("|       ")
-        .concat(p.losses)
-        .concat("|       ")
-        .concat(p.act_losses)
-        .concat("|         ")
-        .concat(p.ties)
-        .concat("|")
-        .concat(p.star_points.toString().padStart(13, " "))
-        .concat("|   ")
-        .concat(Math.ceil(100 * p.stars) / 100);
+      return `${rightAlign(29, p.name)}|${rightAlign(6, p.wins)}|${rightAlign(
+        9,
+        p.act_wins
+      )}|${rightAlign(8, p.losses)}|${rightAlign(
+        12,
+        p.act_losses
+      )}|${rightAlign(6, p.ties)}|${rightAlign(
+        13,
+        fixFloat(p.star_points)
+      )}| ${fixFloat(p.stars)}`;
     }
 
-    return `Data found for ${userMention(
-      team.id
-    )}:\n\`\`\`Name                         | Wins | Act Wins | Losses | Act Losses | Ties | Star Points | Stars\n`
-      .concat(playerData.map((p) => makePlayerIntoRow(p)).join("\n"))
-      .concat("```");
+    return `Data found for ${roleMention(team.id)}:\n`.concat(
+      codeBlock(
+        "".concat(
+          `Name                         | Wins | Act Wins | Losses | Act Losses | Ties | Star Points | Stars\n`,
+          "-----------------------------|------|----------|--------|------------|------|-------------|------\n",
+          playerData.map((p) => makePlayerIntoRow(p)).join("\n")
+        )
+      )
+    );
   }
 
   await baseFunctionlessHandler(

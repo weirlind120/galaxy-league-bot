@@ -24,9 +24,11 @@ export async function loadTeamFromSnowflake(snowflake) {
   );
 }
 
-export async function loadTeamData(snowflake) {
-  return await db.all(
-    "SELECT player.name, wins, act_wins, losses, act_losses, ties, star_points, pstat.stars FROM pstat INNER JOIN player ON player.id = pstat.player INNER JOIN team ON player.team = team.id WHERE team.discord_snowflake = ? AND season = 15 ORDER BY -pstat.stars;",
-    snowflake // KEITH HELP I HARDCODED SEASON = 15
-  );
+export async function loadTeamData(snowflake, season) {
+  const query = `SELECT player.name, wins, act_wins, losses, act_losses, ties, star_points, pstat.stars FROM pstat \
+     INNER JOIN player ON player.id = pstat.player \
+     INNER JOIN team ON player.team = team.id \
+     WHERE team.discord_snowflake = ? AND season = ? \
+     ORDER BY pstat.stars DESC`;
+  return await db.all(query, snowflake, season);
 }
