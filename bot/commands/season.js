@@ -169,11 +169,11 @@ async function calculateStandings(interaction) {
         const { nextStandingsWeek } = data;
 
         const pairings = await loadAllPairingResults(currentSeason.number, nextStandingsWeek);
-        let teamWins = {};
+        let teamWins = new Map((await loadActiveTeams()).map(team => [team.id, 0]));
 
         for (const pairing of pairings) {
             if (!pairing.dead) {
-                teamWins[pairing.winningTeam] = (teamWins[pairing.winningTeam] || 0) + 1;
+                teamWins[pairing.winningTeam] = teamWins[pairing.winningTeam] + 1;
             }
 
             await savePlayerStatUpdate(currentSeason.number, pairing);
