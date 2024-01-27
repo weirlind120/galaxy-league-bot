@@ -6,8 +6,21 @@ export async function loadTeams() {
 
 export async function loadActiveTeams() {
   return await db.all(
-    "SELECT id, discord_snowflake FROM team WHERE active = 1"
+    "SELECT id, discord_snowflake, name FROM team WHERE active = 1"
   );
+}
+
+export async function loadTeamSheet(teamId, season) {
+  const teamInfo = await db.get(
+    "SELECT team.name, wins, losses, ties FROM standing JOIN team ON team = team.id WHERE standing.team = ? AND season = ?;",
+    teamId,
+    season
+  );
+  const snowflake = (
+    await db.get("SELECT discord_snowflake FROM team WHERE team.id = ?", teamId)
+  ).discord_snowflake;
+  teamInfo.players = await loadTeamData(snowflake, season);
+  return teamInfo;
 }
 
 export async function loadTeam(teamId) {
