@@ -19,6 +19,16 @@ export async function loadStandings(season) {
     return await db.all(query, season);
 }
 
+export async function loadTopTeams(season, number) {
+    const query =
+        'SELECT team.id AS teamId, team.discord_snowflake AS teamSnowflake, team.name AS teamName FROM standing \
+         INNER JOIN team ON team.id = standing.team \
+         WHERE season = ? \
+         ORDER BY standing.points DESC, standing.battle_differential DESC LIMIT ?';
+
+    return await db.all(query, season, number);
+}
+
 export async function saveStandingsUpdate(season, differential, leftTeamId, rightTeamId) {
     if (differential > 0) {
         await db.run('UPDATE standing SET wins = wins + 1, points = points + 3, battle_differential = battle_differential + ? WHERE season = ? AND team = ?', differential, season, leftTeamId);
