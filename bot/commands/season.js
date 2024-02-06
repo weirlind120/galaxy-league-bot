@@ -185,7 +185,7 @@ async function calculateStandings(interaction) {
             await postStandings(nextStandingsWeek, standings);
 
             if (nextStandingsWeek === currentSeason.regular_weeks) {
-                await setUpPlayoff(standings);
+                await setUpPlayoff(standings, teamWins.size);
             }
         }
         else {
@@ -227,7 +227,7 @@ function prettyTextStanding(rank, standing) {
     return `${rightAlign(6, rank)}|${rightAlign(8, standing.points)}|${rightAlign(6, standing.battle_differential)}|${rightAlign(3, standing.wins)}|${rightAlign(3, standing.losses)}|${rightAlign(3, standing.ties)}| ${standing.teamName}`;
 }
 
-async function setUpPlayoff(standings) {
+async function setUpPlayoff(standings, numberOfTeams) {
     // I'm sure there's an algorithm but I do not feel like figuring it out right now
     if (currentSeason.playoff_size === 4) {
         await saveOneNewMatchup('sf1', standings[0].teamId, standings[3].teamId, currentSeason.number, currentSeason.current_week + 1);
@@ -239,14 +239,15 @@ async function setUpPlayoff(standings) {
         await saveOneNewMatchup('sf2', standings[3].teamId, standings[4].teamId, currentSeason.number, currentSeason.current_week + 1);
 	}
 
-    await hideAllRegularRooms();
+    await hideAllRegularRooms(numberOfTeams);
     await announceNextPlayoffRound();
 }
 
 async function hideAllRegularRooms() {
     const allTeamSnowflakes = (await loadTeams()).map(team => team.discord_snowflake);
 
-    for (let i = 1; i < 6; i++) {
+
+    for (let i = 1; i <= numberOfTeams / 2; i++) {
         const matchRoom = await channels.fetch(eval(`process.env.matchChannel${i}Id`));
 
         const permissionOverwrites = matchRoom.permissionOverwrites.cache
@@ -393,7 +394,9 @@ async function updateMatchReportsHeader() {
     const matchReportChannel = await channels.fetch(process.env.matchReportChannelId);
 
     const oldHeader = (await matchReportChannel.messages.fetchPinned()).values().next().value;
-    await matchReportChannel.messages.unpin(oldHeader.id);
+    if (oldHeader) {
+        await matchReportChannel.messages.unpin(oldHeader.id);
+	}
 
     const weekHeader = await matchReportChannel.send(bold(`----- ${weekName(currentSeason.current_week)} games -----`));
     await matchReportChannel.messages.pin(weekHeader.id);
