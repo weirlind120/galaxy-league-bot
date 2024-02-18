@@ -32,6 +32,17 @@ export async function loadPlayerFromSnowflake(playerSnowflake) {
     return await db.get(query, playerSnowflake);
 }
 
+export async function loadPlayerFromUsername(playerName) {
+    const query = 
+        'SELECT player.id, player.name, player.stars, player.active, player.discord_snowflake, \
+                role.id AS roleId, role.discord_snowflake AS roleSnowflake, role.name AS roleName, team.id AS teamId, team.discord_snowflake AS teamSnowflake FROM player \
+         LEFT JOIN team ON team.id = player.team \
+         LEFT JOIN role ON role.id = player.role \
+         WHERE player.name = ?';
+
+    return await db.get(query, playerName);
+}
+
 export async function loadExistingLeader(teamSnowflake, roleSnowflake) {
     const query =
         'SELECT player.discord_snowflake FROM player \
