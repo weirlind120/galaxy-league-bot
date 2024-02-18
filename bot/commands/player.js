@@ -1,7 +1,7 @@
 import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention } from 'discord.js';
 import { baseHandler } from './util.js';
 
-import { loadPlayerFromSnowflake, saveNewPlayer, savePlayerChange, loadExistingLeader } from '../../database/player.js';
+import { loadPlayerFromSnowflake, loadPlayerFromUsername, saveNewPlayer, savePlayerChange, loadExistingLeader } from '../../database/player.js';
 import { loadTeamFromSnowflake } from '../../database/team.js';
 import { loadRoleFromSnowflake } from '../../database/role.js';
 
