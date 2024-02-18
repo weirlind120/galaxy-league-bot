@@ -330,7 +330,7 @@ async function assignPlayer(interaction) {
 async function dropPlayer(interaction) {
     async function dataCollector(interaction) {
         const player = interaction.options.getMember('player');
-        const playerName = interaction.options.getString('playerName');
+        const playerName = interaction.options.getString('player_name');
 
         if (!player && !playerName) {
             return { failure: 'Put in either a player or their name' };
@@ -425,7 +425,7 @@ async function setPlayerInactive(interaction) {
 async function setPlayerActive(interaction) {
     async function dataCollector(interaction) {
         const player = interaction.options.getUser('player');
-        const playerName = interaction.options.getString('playerName');
+        const playerName = interaction.options.getString('player_name');
 
         if (!player && !playerName) {
             return { failure: 'Put in either a player or their name' };
