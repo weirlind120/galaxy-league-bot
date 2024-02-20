@@ -324,12 +324,12 @@ async function announceWinner(winner) {
 
 async function makeWinnerRole(winningTeamId, winningTeamSnowflake) {
     const color = (await mushiLeagueGuild.roles.fetch(winningTeamSnowflake)).hexColor;
-    const lastWinnerPosition = (await mushiLeagueGuild.roles.cache.find(r => r.name === `Season ${currentSeason.number - 1} Winner`)).position;
+    const lastWinnerPosition = (await mushiLeagueGuild.roles.cache.find(r => r.name === `Season ${currentSeason.number - 1} Winner`))?.position;
 
     const winnerRole = await mushiLeagueGuild.roles.create({
         name: `Season ${currentSeason.number} Winner`,
         color: color,
-        position: lastWinnerPosition + 1,
+        position: lastWinnerPosition ?? 0 + 1,
     });
 
     const players = (await loadAllPlayersOnTeam(winningTeamId)).map(player => player.discord_snowflake);
