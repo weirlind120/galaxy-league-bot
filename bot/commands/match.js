@@ -67,6 +67,10 @@ export const MATCH_COMMAND = {
                         .setName('number')
                         .setDescription('which game in the set this is')
                         .setRequired(true))
+                .addUserOption(option =>
+                    option
+                        .setName('player')
+                        .setDescription('either player in the set, defaults to yourself'))
                 .addBooleanOption(option =>
                     option
                         .setName('extension')
@@ -325,7 +329,7 @@ async function linkMatch(interaction) {
         const number = interaction.options.getNumber('number');
         const extension = interaction.options.getBoolean('extension');
         const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
-        const player = interaction.member;
+        const player = interaction.options.getMember('player') || interaction.member;
         const ping = (number === 1);
         const pairing = await loadOnePairing(currentSeason.number, week, player.id);
 
