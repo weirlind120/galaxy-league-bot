@@ -135,10 +135,10 @@ async function calculateStandings(interaction) {
         const standingsSoFar = await loadStandingWeeksSoFar(currentSeason.number);
 
         // because we stop updating standings for playoff, but you're never doing calculate_standings after next_week in playoff
-        const nextStandingsWeek =
-            standingsSoFar.standingsWeeks >= currentSeason.regular_weeks
-                ? currentSeason.current_week
-                : standingsSoFar.standingsWeeks + 1;
+        const nextStandingsWeek = 1;
+            //standingsSoFar.standingsWeeks >= currentSeason.regular_weeks
+            //    ? currentSeason.current_week
+            //    : standingsSoFar.standingsWeeks + 1;
 
         const openPairings = await loadOpenPairings(currentSeason.number, nextStandingsWeek);
 
@@ -169,7 +169,10 @@ async function calculateStandings(interaction) {
         const { nextStandingsWeek } = data;
 
         const pairings = await loadAllPairingResults(currentSeason.number, nextStandingsWeek);
-        let teamWins = new Map((await loadActiveTeams()).map(team => [team.id, 0]));
+        let teamWins = {};
+        for (const team of await loadActiveTeams()) {
+            teamWins[team.id] = 0;
+		}
 
         for (const pairing of pairings) {
             if (!pairing.dead) {
