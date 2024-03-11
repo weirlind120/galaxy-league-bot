@@ -94,7 +94,7 @@ export async function loadOneLineup(season, week, requesterSnowflake) {
          INNER JOIN matchup ON pairing.matchup = matchup.id \
          INNER JOIN week ON matchup.week = week.id \
          INNER JOIN player ON pairing.right_player = player.id \
-         INNER JOIN team ON matchup.left_team = team.id \
+         INNER JOIN team ON matchup.right_team = team.id \
          WHERE matchup.right_team = (SELECT team FROM player WHERE discord_snowflake = ?) AND week.season = ? AND week.number = ? \
          ORDER BY slot ASC';
 
