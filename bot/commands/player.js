@@ -352,16 +352,16 @@ async function dropPlayer(interaction) {
         let failures = [], prompts = [];
 
         if (!existingPlayer.teamSnowflake) {
-            failures.push(`${userMention(existingPlayer.id)} is already not on a team.`);
+            failures.push(`${userMention(existingPlayer.discord_snowflake)} is already not on a team.`);
         }
 
         if (existingPlayer.roleName === "Captain" || existingPlayer.roleName === "Coach") {
-            prompts.push(`${userMention(existingPlayer.id)} was ${roleMention(existingPlayer.teamSnowflake)}'s ${existingPlayer.roleName}. This team will be without a ${existingPlayer.roleName}.`);
+            prompts.push(`${userMention(existingPlayer.discord_snowflake)} was ${roleMention(existingPlayer.teamSnowflake)}'s ${existingPlayer.roleName}. This team will be without a ${existingPlayer.roleName}.`);
         }
 
         const confirmLabel = 'Confirm Player Dropping';
-        const confirmMessage = `${userMention(existingPlayer.id)} dropped from ${roleMention(existingPlayer.teamSnowflake)}.`;
-        const cancelMessage = `${userMention(existingPlayer.id)}'s team assignment not changed.`;
+        const confirmMessage = `${userMention(existingPlayer.discord_snowflake)} dropped from ${roleMention(existingPlayer.teamSnowflake)}.`;
+        const cancelMessage = `${userMention(existingPlayer.discord_snowflake)}'s team assignment not changed.`;
 
         return [failures, prompts, confirmLabel, confirmMessage, cancelMessage];
     }
@@ -369,7 +369,7 @@ async function dropPlayer(interaction) {
     async function onConfirm(data) {
         const { player, existingPlayer } = data;
 
-        await savePlayerChange(existingPlayer.id, existingPlayer.name, existingPlayer.stars, null, null, existingPlayer.active);
+        await savePlayerChange(existingPlayer.discord_snowflake, existingPlayer.name, existingPlayer.stars, null, null, existingPlayer.active);
         player?.roles.remove([existingPlayer.roleSnowflake, existingPlayer.teamSnowflake]);
     }
 
@@ -390,32 +390,32 @@ async function setPlayerInactive(interaction) {
     }
 
     function verifier(data) {
-        const { player, existingPlayer } = data;
+        const { existingPlayer } = data;
         let failures = [], prompts = [];
 
         if (existingPlayer.teamSnowflake) {
-            prompts.push(`${player} was on ${roleMention(existingPlayer.teamSnowflake)}. They will be dropped.`);
+            prompts.push(`${userMention(existingPlayer.discord_snowflake)} was on ${roleMention(existingPlayer.teamSnowflake)}. They will be dropped.`);
         }
 
         if (existingPlayer.roleName === "Captain" || existingPlayer.roleName === "Coach") {
-            prompts.push(`${player} was ${roleMention(existingPlayer.teamSnowflake)}'s ${existingPlayer.roleName}. This team will be without a ${existingPlayer.roleName}.`);
+            prompts.push(`${userMention(existingPlayer.discord_snowflake)} was ${roleMention(existingPlayer.teamSnowflake)}'s ${existingPlayer.roleName}. This team will be without a ${existingPlayer.roleName}.`);
         }
 
         const confirmLabel = 'Confirm Player Deactivation';
         const confirmMessage = existingPlayer.teamSnowflake
-            ? `${player} dropped from ${roleMention(existingPlayer.teamSnowflake)} and set to inactive (cannot be on a team).`
-            : `${player} set to inactive (cannot be on a team).`;
-        const cancelMessage = `${player}'s active status not changed.`;
+            ? `${userMention(existingPlayer.discord_snowflake)} dropped from ${roleMention(existingPlayer.teamSnowflake)} and set to inactive (cannot be on a team).`
+            : `${userMention(existingPlayer.discord_snowflake)} set to inactive (cannot be on a team).`;
+        const cancelMessage = `${userMention(existingPlayer.discord_snowflake)}'s active status not changed.`;
 
         return [failures, prompts, confirmLabel, confirmMessage, cancelMessage];
     }
 
     async function onConfirm(data) {
         const { player, existingPlayer } = data;
-        await savePlayerChange(player.id, existingPlayer.name, existingPlayer.stars, null, null, 0);
+        await savePlayerChange(existingPlayer.discord_snowflake, existingPlayer.name, existingPlayer.stars, null, null, 0);
 
         if (existingPlayer.teamSnowflake) {
-            player.roles.remove([existingPlayer.roleSnowflake, existingPlayer.teamSnowflake]);
+            player?.roles.remove([existingPlayer.roleSnowflake, existingPlayer.teamSnowflake]);
         }
     }
 
