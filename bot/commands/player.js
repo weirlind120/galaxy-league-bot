@@ -439,7 +439,7 @@ async function setPlayerActive(interaction) {
             return { failure: `${player || existingPlayer} is not in the pool; use /player add instead.` };
         }
 
-        return { playerSnowflake: existingPlayer.id, existingPlayer };
+        return { playerSnowflake: existingPlayer.discord_snowflake, existingPlayer };
     }
 
     function verifier(data) {
