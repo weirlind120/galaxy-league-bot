@@ -135,10 +135,10 @@ async function calculateStandings(interaction) {
         const standingsSoFar = await loadStandingWeeksSoFar(currentSeason.number);
 
         // because we stop updating standings for playoff, but you're never doing calculate_standings after next_week in playoff
-        const nextStandingsWeek = 1;
-            //standingsSoFar.standingsWeeks >= currentSeason.regular_weeks
-            //    ? currentSeason.current_week
-            //    : standingsSoFar.standingsWeeks + 1;
+        const nextStandingsWeek =
+            standingsSoFar.standingsWeeks >= currentSeason.regular_weeks
+                ? currentSeason.current_week
+                : standingsSoFar.standingsWeeks + 1;
 
         const openPairings = await loadOpenPairings(currentSeason.number, nextStandingsWeek);
 
