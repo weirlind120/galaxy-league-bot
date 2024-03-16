@@ -1,4 +1,5 @@
 import { db } from './database.js';
+import { fixFloat } from '../bot/commands/util.js';
 
 export async function saveInitialPstats(season) {
     const query = 'INSERT INTO pstat (player, season, stars) SELECT id, ?, stars FROM player WHERE team IS NOT NULL AND role != 3';
@@ -21,7 +22,7 @@ export async function savePlayerStatUpdate(season, pairing) {
 }
 
 function getSpread(winningStars, losingStars) {
-    const x = winningStars - losingStars;
+    const x = fixFloat(winningStars - losingStars);
 
     if (x > 1) return 5;
     if (x < -1) return 15;

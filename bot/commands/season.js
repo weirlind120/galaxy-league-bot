@@ -169,7 +169,10 @@ async function calculateStandings(interaction) {
         const { nextStandingsWeek } = data;
 
         const pairings = await loadAllPairingResults(currentSeason.number, nextStandingsWeek);
-        let teamWins = new Map((await loadActiveTeams()).map(team => [team.id, 0]));
+        let teamWins = {};
+        for (const team of await loadActiveTeams()) {
+            teamWins[team.id] = 0;
+		}
 
         for (const pairing of pairings) {
             if (!pairing.dead) {
@@ -324,12 +327,12 @@ async function announceWinner(winner) {
 
 async function makeWinnerRole(winningTeamId, winningTeamSnowflake) {
     const color = (await mushiLeagueGuild.roles.fetch(winningTeamSnowflake)).hexColor;
-    const lastWinnerPosition = (await mushiLeagueGuild.roles.cache.find(r => r.name === `Season ${currentSeason.number - 1} Winner`)).position;
+    const lastWinnerPosition = (await mushiLeagueGuild.roles.cache.find(r => r.name === `Season ${currentSeason.number - 1} Winner`))?.position;
 
     const winnerRole = await mushiLeagueGuild.roles.create({
         name: `Season ${currentSeason.number} Winner`,
         color: color,
-        position: lastWinnerPosition + 1,
+        position: lastWinnerPosition ?? 0 + 1,
     });
 
     const players = (await loadAllPlayersOnTeam(winningTeamId)).map(player => player.discord_snowflake);

@@ -1,7 +1,7 @@
 import { SlashCommandBuilder, PermissionFlagsBits, roleMention, userMention } from 'discord.js';
 import { baseHandler } from './util.js';
 
-import { loadPlayerFromSnowflake, saveNewPlayer, savePlayerChange, loadExistingLeader } from '../../database/player.js';
+import { loadPlayerFromSnowflake, loadPlayerFromUsername, saveNewPlayer, savePlayerChange, loadExistingLeader } from '../../database/player.js';
 import { loadTeamFromSnowflake } from '../../database/team.js';
 import { loadRoleFromSnowflake } from '../../database/role.js';
 
@@ -83,8 +83,11 @@ export const PLAYER_COMMAND = {
                 .addUserOption(option =>
                     option
                         .setName('player')
-                        .setDescription('Player')
-                        .setRequired(true)))
+                        .setDescription('Player'))
+                .addStringOption(option =>
+                    option
+                        .setName('player_name')
+                        .setDescription('Player username')))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('set_inactive')
@@ -92,8 +95,11 @@ export const PLAYER_COMMAND = {
                 .addUserOption(option =>
                     option
                         .setName('player')
-                        .setDescription('Player to add')
-                        .setRequired(true)))
+                        .setDescription('Player to add'))
+                .addStringOption(option =>
+                    option
+                        .setName('player_name')
+                        .setDescription('Player username')))
         .addSubcommand(subcommand =>
             subcommand
                 .setName('set_active')
@@ -324,31 +330,38 @@ async function assignPlayer(interaction) {
 async function dropPlayer(interaction) {
     async function dataCollector(interaction) {
         const player = interaction.options.getMember('player');
+        const playerName = interaction.options.getString('player_name');
 
-        const existingPlayer = await loadPlayerFromSnowflake(player.id);
+        if (!player && !playerName) {
+            return { failure: 'Put in either a player or their name' };
+		}
+
+        const existingPlayer = player
+            ? await loadPlayerFromSnowflake(player.id)
+            : await loadPlayerFromUsername(playerName);
 
         if (!existingPlayer) {
-            return { failure: `${player} is not in the pool.` };
+            return { failure: `${player || playerName} is not in the pool.` };
         }
 
         return { player, existingPlayer };
     }
 
     function verifier(data) {
-        const { player, existingPlayer } = data;
+        const { existingPlayer } = data;
         let failures = [], prompts = [];
 
         if (!existingPlayer.teamSnowflake) {
-            failures.push(`${player} is already not on a team.`);
+            failures.push(`${userMention(existingPlayer.discord_snowflake)} is already not on a team.`);
         }
 
         if (existingPlayer.roleName === "Captain" || existingPlayer.roleName === "Coach") {
-            prompts.push(`${player} was ${roleMention(existingPlayer.teamSnowflake)}'s ${existingPlayer.roleName}. This team will be without a ${existingPlayer.roleName}.`);
+            prompts.push(`${userMention(existingPlayer.discord_snowflake)} was ${roleMention(existingPlayer.teamSnowflake)}'s ${existingPlayer.roleName}. This team will be without a ${existingPlayer.roleName}.`);
         }
 
         const confirmLabel = 'Confirm Player Dropping';
-        const confirmMessage = `${player} dropped from ${roleMention(existingPlayer.teamSnowflake)}.`;
-        const cancelMessage = `${player}'s team assignment not changed.`;
+        const confirmMessage = `${userMention(existingPlayer.discord_snowflake)} dropped from ${roleMention(existingPlayer.teamSnowflake)}.`;
+        const cancelMessage = `${userMention(existingPlayer.discord_snowflake)}'s team assignment not changed.`;
 
         return [failures, prompts, confirmLabel, confirmMessage, cancelMessage];
     }
@@ -356,8 +369,8 @@ async function dropPlayer(interaction) {
     async function onConfirm(data) {
         const { player, existingPlayer } = data;
 
-        await savePlayerChange(player.id, existingPlayer.name, existingPlayer.stars, null, null, existingPlayer.active);
-        player.roles.remove([existingPlayer.roleSnowflake, existingPlayer.teamSnowflake]);
+        await savePlayerChange(existingPlayer.discord_snowflake, existingPlayer.name, existingPlayer.stars, null, null, existingPlayer.active);
+        player?.roles.remove([existingPlayer.roleSnowflake, existingPlayer.teamSnowflake]);
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
@@ -377,32 +390,32 @@ async function setPlayerInactive(interaction) {
     }
 
     function verifier(data) {
-        const { player, existingPlayer } = data;
+        const { existingPlayer } = data;
         let failures = [], prompts = [];
 
         if (existingPlayer.teamSnowflake) {
-            prompts.push(`${player} was on ${roleMention(existingPlayer.teamSnowflake)}. They will be dropped.`);
+            prompts.push(`${userMention(existingPlayer.discord_snowflake)} was on ${roleMention(existingPlayer.teamSnowflake)}. They will be dropped.`);
         }
 
         if (existingPlayer.roleName === "Captain" || existingPlayer.roleName === "Coach") {
-            prompts.push(`${player} was ${roleMention(existingPlayer.teamSnowflake)}'s ${existingPlayer.roleName}. This team will be without a ${existingPlayer.roleName}.`);
+            prompts.push(`${userMention(existingPlayer.discord_snowflake)} was ${roleMention(existingPlayer.teamSnowflake)}'s ${existingPlayer.roleName}. This team will be without a ${existingPlayer.roleName}.`);
         }
 
         const confirmLabel = 'Confirm Player Deactivation';
         const confirmMessage = existingPlayer.teamSnowflake
-            ? `${player} dropped from ${roleMention(existingPlayer.teamSnowflake)} and set to inactive (cannot be on a team).`
-            : `${player} set to inactive (cannot be on a team).`;
-        const cancelMessage = `${player}'s active status not changed.`;
+            ? `${userMention(existingPlayer.discord_snowflake)} dropped from ${roleMention(existingPlayer.teamSnowflake)} and set to inactive (cannot be on a team).`
+            : `${userMention(existingPlayer.discord_snowflake)} set to inactive (cannot be on a team).`;
+        const cancelMessage = `${userMention(existingPlayer.discord_snowflake)}'s active status not changed.`;
 
         return [failures, prompts, confirmLabel, confirmMessage, cancelMessage];
     }
 
     async function onConfirm(data) {
         const { player, existingPlayer } = data;
-        await savePlayerChange(player.id, existingPlayer.name, existingPlayer.stars, null, null, 0);
+        await savePlayerChange(existingPlayer.discord_snowflake, existingPlayer.name, existingPlayer.stars, null, null, 0);
 
         if (existingPlayer.teamSnowflake) {
-            player.roles.remove([existingPlayer.roleSnowflake, existingPlayer.teamSnowflake]);
+            player?.roles.remove([existingPlayer.roleSnowflake, existingPlayer.teamSnowflake]);
         }
     }
 
@@ -412,14 +425,21 @@ async function setPlayerInactive(interaction) {
 async function setPlayerActive(interaction) {
     async function dataCollector(interaction) {
         const player = interaction.options.getUser('player');
+        const playerName = interaction.options.getString('player_name');
 
-        const existingPlayer = await loadPlayerFromSnowflake(player.id);
-
-        if (!existingPlayer) {
-            return { failure: `${player} is not in the pool; use /player add instead.` };
+        if (!player && !playerName) {
+            return { failure: 'Put in either a player or their name' };
         }
 
-        return { playerSnowflake: player.id, existingPlayer };
+        const existingPlayer = player
+            ? await loadPlayerFromSnowflake(player.id)
+            : await loadPlayerFromUsername(playerName);
+
+        if (!existingPlayer) {
+            return { failure: `${player || existingPlayer} is not in the pool; use /player add instead.` };
+        }
+
+        return { playerSnowflake: existingPlayer.discord_snowflake, existingPlayer };
     }
 
     function verifier(data) {

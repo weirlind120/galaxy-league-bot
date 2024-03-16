@@ -67,6 +67,10 @@ export const MATCH_COMMAND = {
                         .setName('number')
                         .setDescription('which game in the set this is')
                         .setRequired(true))
+                .addUserOption(option =>
+                    option
+                        .setName('player')
+                        .setDescription('either player in the set, defaults to yourself'))
                 .addBooleanOption(option =>
                     option
                         .setName('extension')
@@ -325,26 +329,24 @@ async function linkMatch(interaction) {
         const number = interaction.options.getNumber('number');
         const extension = interaction.options.getBoolean('extension');
         const week = extension ? currentSeason.current_week - 1 : currentSeason.current_week;
-        const player = interaction.member;
+        const player = interaction.options.getMember('player') || interaction.member;
         const ping = (number === 1);
         const pairing = await loadOnePairing(currentSeason.number, week, player.id);
-        const matchRoom = pairing
-            ? await channels.fetch(eval(`process.env.matchChannel${pairing.room}Id`))
-            : undefined;
+
+        if (!pairing) {
+            return { failure: 'this is not a league set' };
+		}
+
+        const matchRoom = await channels.fetch(eval(`process.env.matchChannel${pairing.room}Id`));
 
         return { gameLink, ping, number, player, pairing, matchRoom };
     }
 
     function verifier(data) {
-        const { player } = data;
         let failures = [], prompts = [];
 
-        if (!player.roles.cache.has(process.env.currentlyPlayingRoleId)) {
-            failures.push(`You're not barred from ${channelMention(process.env.liveMatchesChannelId)}! Link it yourself, you bum.`);
-        }
-
         const confirmLabel = 'Confirm Link Game';
-        const confirmMessage = `Game linked in ${channelMention(process.env.liveMatchesChannelId)}`;
+        const confirmMessage = `Game linked in ${channelMention(process.env.matchLinksChannelId)}`;
         const cancelMessage = 'Game not linked';
 
         return [failures, prompts, confirmLabel, confirmMessage, cancelMessage];
@@ -359,8 +361,8 @@ async function linkMatch(interaction) {
         const linkMessage = `${gameLink} ${leftPlayerText} vs ${rightPlayerText} game ${number}`;
         const linkMessageWithPing = linkMessage + ` ${roleMention(process.env.spectatorRoleId)}`;
 
-        const liveMatchesChannel = await channels.fetch(process.env.liveMatchesChannelId);
-        await liveMatchesChannel.send({
+        const matchLinksChannel = await channels.fetch(process.env.matchLinksChannelId);
+        await matchLinksChannel.send({
             content: ping ? linkMessageWithPing : linkMessage,
             allowedMentions: { roles: [process.env.spectatorRoleId] }
         });
