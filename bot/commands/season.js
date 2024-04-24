@@ -246,9 +246,8 @@ async function setUpPlayoff(standings, numberOfTeams) {
     await announceNextPlayoffRound();
 }
 
-async function hideAllRegularRooms() {
+async function hideAllRegularRooms(numberOfTeams) {
     const allTeamSnowflakes = (await loadTeams()).map(team => team.discord_snowflake);
-
 
     for (let i = 1; i <= numberOfTeams / 2; i++) {
         const matchRoom = await channels.fetch(eval(`process.env.matchChannel${i}Id`));

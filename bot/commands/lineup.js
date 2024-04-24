@@ -420,16 +420,15 @@ async function remindLineup(interaction) {
 
         const lineup = await loadOneLineup(currentSeason.number, week, interaction.user.id);
 
+        if (lineup.length === 0) {
+            return { failure: `No lineup found for ${weekName(week)} for ${interaction.member}.` };
+        }
+
         return { week, teamSnowflake: lineup[0].teamSnowflake, lineup };
     }
 
     function verifier(data) {
-        const { week, teamSnowflake, lineup } = data;
         let failures = [];
-
-        if (lineup.length === 0) {
-            failures.push(`No lineup found for ${weekName(week)} for ${roleMention(teamSnowflake)}.`);
-        }
 
         return failures;
     }
