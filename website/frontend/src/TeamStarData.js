@@ -1,6 +1,6 @@
 function TeamStarData({ players }) {
   const totStars = players.reduce((a, c) => a + c.stars, 0);
-  const totPlayers = players.reduce((a, c) => a + 1, 0);
+  const totPlayers = players.length;
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
       <div>Team Star Data</div>
