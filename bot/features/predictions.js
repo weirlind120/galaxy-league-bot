@@ -19,7 +19,7 @@ async function postPredictionsForMatchup(predictionsChannel, pairingSet) {
     await sendPredictionMessage(predictionsChannel, headerMessage, pairingSet[0].leftEmoji, pairingSet[0].rightEmoji, 'matchup', pairingSet[0].matchup);
 
     for (const pairing of pairingSet) {
-        const pairingMessage = `${pairing.leftplayerName} vs ${pairing.rightPlayerName}`;
+        const pairingMessage = `${pairing.leftPlayerName} vs ${pairing.rightPlayerName}`;
         await sendPredictionMessage(predictionsChannel, pairingMessage, pairing.leftEmoji, pairing.rightEmoji, 'pairing', pairing.id);
     }
 }
