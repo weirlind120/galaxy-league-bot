@@ -566,8 +566,8 @@ async function postReport(pairing, winnerOnLeft, extension, games, act, dead) {
 }
 
 function makeReportPlaintext(pairing, winnerOnLeft, extension, act, dead) {
-    const leftPlayerText = `(${roleMention(pairing.leftTeamSnowflake)}) ${userMention(pairing.leftPlayerSnowflake)}`;
-    const rightPlayerText = `${userMention(pairing.rightPlayerSnowflake)} (${roleMention(pairing.rightTeamSnowflake)})`;
+    const leftPlayerText = `(${roleMention(pairing.leftTeamSnowflake)}) ${pairing.leftPlayerName}`;
+    const rightPlayerText = `${pairing.rightPlayerName} (${roleMention(pairing.rightTeamSnowflake)})`;
     const extensionMessage = extension ? italic('\n(Extension from last week)') : '';
 
     if (act) {
@@ -587,8 +587,8 @@ function makeReplayEmbed(pairing, winnerOnLeft, extension, games) {
         gameFields.push({ name: `game ${i + 1}`, value: hyperlink('link', games.at(i) || 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'), inline: true });
     }
 
-    const leftPlayerText = `(${roleMention(pairing.leftTeamSnowflake)}) ${userMention(pairing.leftPlayerSnowflake)}`;
-    const rightPlayerText = `${userMention(pairing.rightPlayerSnowflake)} (${roleMention(pairing.rightTeamSnowflake)})`;
+    const leftPlayerText = `(${roleMention(pairing.leftTeamSnowflake)}) ${pairing.leftPlayerName}`;
+    const rightPlayerText = `${pairing.rightPlayerName} (${roleMention(pairing.rightTeamSnowflake)})`;
     const winnerText = games.length === 2
         ? winnerOnLeft ? '\u{0032}\u{FE0F}\u{20E3} > \u{0030}\u{FE0F}\u{20E3}' : '\u{0030}\u{FE0F}\u{20E3} < \u{0032}\u{FE0F}\u{20E3}'
         : winnerOnLeft ? '\u{0032}\u{FE0F}\u{20E3} > \u{0031}\u{FE0F}\u{20E3}' : '\u{0031}\u{FE0F}\u{20E3} < \u{0032}\u{FE0F}\u{20E3}';
@@ -649,7 +649,7 @@ async function undoReport(interaction) {
         await savePairingResult(pairing.id, null, null, null, null, null, null, null);
 
         await resetPredictionWinner(pairing.predictions_message, pairing.matchupPrediction, pairing.winner === pairing.leftPlayerId,
-            pairing.dead, pairing.leftPlayerSnowflake, pairing.rightPlayerSnowflake);
+            pairing.dead, pairing.leftPlayerName, pairing.rightPlayerName);
         await setScheduledTime(pairing.leftPlayerSnowflake, pairing.schedule_message, '');
     }
 
