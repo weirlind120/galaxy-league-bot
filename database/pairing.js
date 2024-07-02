@@ -101,6 +101,19 @@ export async function loadOneLineup(season, week, requesterSnowflake) {
     return await db.all(query, requesterSnowflake, season, week, requesterSnowflake, season, week);
 }
 
+export async function loadNextMatches() {
+    const query =
+        'SELECT leftPlayer.name AS leftPlayerName, leftTeam.discord_snowflake AS leftTeamSnowflake, rightPlayer.name AS rightPlayerName, rightTeam.discord_snowflake AS rightTeamSnowflake, scheduled_datetime FROM pairing \
+         INNER JOIN player AS leftPlayer ON leftPlayer.id = pairing.left_player \
+         INNER JOIN team AS leftTeam ON leftTeam.id = leftPlayer.team \
+         INNER JOIN player AS rightPlayer ON rightPlayer.id = pairing.right_player \
+         INNER JOIN team AS rightTeam ON rightTeam.id = rightPlayer.team \
+         WHERE scheduled_datetime > ? \
+         ORDER BY scheduled_datetime ASC LIMIT 10';
+
+    return await db.all(query, Date.now());
+}
+
 export async function savePairingResult(pairingId, games, winner, dead) {
     await db.run('UPDATE pairing SET game1 = ?, game2 = ?, game3 = ?, game4 = ?, game5 = ?, winner = ?, dead = ? WHERE id = ?',
         games?.at(0), games?.at(1), games?.at(2), games?.at(3), games?.at(4), winner, dead, pairingId);
@@ -133,4 +146,8 @@ export async function saveLineupSubmission(matchupId, side, lineup) {
 
         await db.run(query);
     }
+}
+
+export async function saveScheduledTime(pairingId, date) {
+    await db.run('UPDATE pairing SET scheduled_datetime = ? WHERE id = ?', date.valueOf(), pairingId);
 }

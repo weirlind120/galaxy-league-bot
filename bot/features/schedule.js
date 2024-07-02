@@ -1,6 +1,7 @@
 import { channels } from '../globals.js';
 import { saveScheduleMessageId } from '../../database/matchup.js';
 import { userMention, roleMention } from 'discord.js';
+import { saveScheduledTime } from '../../database/pairing.js';
 
 export async function postScheduling(groupedPairings) {
     const scheduleChannel = await channels.fetch(process.env.scheduleChannelId);
@@ -34,8 +35,12 @@ async function getScheduleMessage(scheduleMessageId) {
     return await scheduleChannel.messages.fetch({ message: scheduleMessageId, force: true });
 }
 
-export async function setScheduledTime(playerSnowflake, scheduleMessageId, newValue) {
+export async function setScheduledTime(playerSnowflake, scheduleMessageId, dateString, pairingId, date) {
     const scheduleMessage = await getScheduleMessage(scheduleMessageId);
-    const newScheduleMessage = scheduleMessage.content.replace(RegExp(`^(.*${playerSnowflake}.*>:).*$`, 'm'), `$1 ${newValue}`);
+    const newScheduleMessage = scheduleMessage.content.replace(RegExp(`^(.*${playerSnowflake}.*>:).*$`, 'm'), `$1 ${dateString}`);
     await scheduleMessage.edit(newScheduleMessage);
+
+    if (date) {
+        await saveScheduledTime(pairingId, date);
+    }
 }

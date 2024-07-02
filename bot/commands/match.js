@@ -1,10 +1,10 @@
 import { SlashCommandBuilder, roleMention, userMention, spoiler, italic, time, hyperlink, EmbedBuilder, channelMention } from 'discord.js';
-import { baseHandler, userIsMod } from './util.js';
+import { baseHandler, userIsMod, baseFunctionlessHandler } from './util.js';
 import { currentSeason, channels, mushiLeagueGuild } from '../globals.js';
-import { set, parse, isValid, sub, add } from 'date-fns';
+import { set, parse, isValid, sub, add, endOfWeek } from 'date-fns';
 import { savePredictions, updatePrediction, resetPredictionWinner } from '../features/predictions.js';
 import { setScheduledTime } from '../features/schedule.js';
-import { savePairingResult, loadOnePairing, loadOpenPairings } from '../../database/pairing.js';
+import { savePairingResult, loadOnePairing, loadOpenPairings, loadNextMatches } from '../../database/pairing.js';
 
 export const MATCH_COMMAND = {
     data: new SlashCommandBuilder()
@@ -148,7 +148,12 @@ export const MATCH_COMMAND = {
                 .addBooleanOption(option =>
                     option
                         .setName('extension')
-                        .setDescription('whether this is an extension from last week'))),
+                        .setDescription('whether this is an extension from last week')))
+
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('next')
+                .setDescription('shows next 10 upcoming matches')),
 
     async execute(interaction) {
         switch (interaction.options.getSubcommand()) {
@@ -173,13 +178,16 @@ export const MATCH_COMMAND = {
             case 'undo':
                 await undoReport(interaction);
                 break;
+            case 'next':
+                await nextMatches(interaction);
+                break;
         }
     }
 }
 
 async function scheduleMatch(interaction) {
     async function dataCollector(interaction) {
-        const date = interaction.options.getString('time');
+        let date = interaction.options.getString('time');
         const inexact = interaction.options.getBoolean('inexact');
         const timezone = interaction.options.getNumber('timezone');
         const player = interaction.options.getUser('player') || interaction.user;
@@ -192,26 +200,29 @@ async function scheduleMatch(interaction) {
             return { failure: `No pairing found for ${player}. Is this a Mushi League match?` };
         }
 
-        let dateString = date;
-
         if (!inexact) {
-            let localDate = parseDateInput(dateString);
+            date = parseDateInput(date);
 
-            if (!localDate) {
+            if (!date) {
                 return { failure: 'Couldn\'t parse the date. Please either specify that it\'s inexact, or pass it in formatted like "Sunday 4:00 PM", "Sunday 4 PM", or "Sunday 16:00"' };
             }
 
-            const botTimezone = localDate.getTimezoneOffset() / -60;
-            let botTime = sub(localDate, { hours: timezone - botTimezone });
+            const botTimezone = date.getTimezoneOffset() / -60;
+            date = sub(date, { hours: timezone - botTimezone });
 
-            if (botTime < Date.now()) {
-                botTime = add(botTime, { weeks: 1 });
+            const endOfGameWeek = endOfWeek(sub(Date.now(), { hours: -7 - botTimezone }), { weekStartsOn: 1 });
+            if (date > endOfGameWeek) {
+                date = sub(date, { weeks: 1 });
             }
 
-            dateString = time(botTime);
+            if (date < Date.now()) {
+                date = add(date, { weeks: 1 });
+            }
         }
 
-        return { playerSnowflake: player.id, dateString, timezone, inexact, pairing };
+        const dateString = inexact ? date : time(date);
+
+        return { playerSnowflake: player.id, date, dateString, timezone, inexact, pairing };
     }
 
     function verifier(data) {
@@ -230,7 +241,8 @@ async function scheduleMatch(interaction) {
     }
 
     async function onConfirm(data) {
-        await setScheduledTime(data.playerSnowflake, data.pairing.schedule_message, data.dateString);
+        const { playerSnowflake, date, dateString, pairing, inexact } = data;
+        await setScheduledTime(playerSnowflake, pairing.schedule_message, dateString, pairing.id, inexact ? undefined : date);
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
@@ -664,4 +676,30 @@ async function notifyOwnersIfAllMatchesDone(week) {
             allowedMentions: { parse: ['roles'] }
         })
     }
+}
+
+async function nextMatches(interaction) {
+    async function dataCollector(interaction) {
+        const upcomingMatches = await loadNextMatches();
+
+        return { upcomingMatches };
+    }
+
+    function verifier(data) {
+
+    }
+
+    function responseWriter(data) {
+        const { upcomingMatches } = data;
+        
+        if (upcomingMatches.length === 0) {
+            return 'No upcoming matches.';
+        }
+
+        return 'Next 10 upcoming matches:\n\n'.concat(upcomingMatches.map(match =>
+            `${time(new Date(match.scheduled_datetime))}: ${roleMention(match.leftTeamSnowflake)} ${match.leftPlayerName} vs ${match.rightPlayerName} ${roleMention(match.rightTeamSnowflake)}`
+        ).join('\n'));
+    }
+
+    await baseFunctionlessHandler(interaction, dataCollector, verifier, responseWriter, true);
 }
