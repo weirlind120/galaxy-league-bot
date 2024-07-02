@@ -375,13 +375,13 @@ async function nextWeek(interaction) {
         let prompts = [], failures = [];
 
         pairingsNeedingExtension.forEach(pairing => {
-        //    prompts.push(`(${roleMention(pairing.leftTeamSnowflake)}) ${userMention(pairing.leftPlayerSnowflake)} vs ${userMention(pairing.rightPlayerSnowflake)} (${roleMention(pairing.rightTeamSnowflake)}) will be granted an extension`);
+            prompts.push(`(${roleMention(pairing.leftTeamSnowflake)}) ${userMention(pairing.leftPlayerSnowflake)} vs ${userMention(pairing.rightPlayerSnowflake)} (${roleMention(pairing.rightTeamSnowflake)}) will be granted an extension`);
         });
 
         matchupsMissingLineups.forEach(matchup => {
-            //prompts.push(`${roleMention(matchup.delinquentTeamSnowflake)} hasn't submitted their lineup yet`.concat(
-            //    matchup.rigged_count > 0 ? ' and their opponent said they were rigging pairings.' : ''
-            //));
+            prompts.push(`${roleMention(matchup.delinquentTeamSnowflake)} hasn't submitted their lineup yet`.concat(
+                matchup.rigged_count > 0 ? ' and their opponent said they were rigging pairings.' : ''
+            ));
         });
 
         const confirmLabel = 'Confirm advance week';
@@ -393,16 +393,16 @@ async function nextWeek(interaction) {
 
     async function onConfirm(data) {
         const { pairingsNeedingExtension, matchupsMissingLineups, userForAutoLineups } = data;
-        //await advanceCurrentWeek();
-        //await updateMatchReportsHeader();
-        //await createExtensionRooms(pairingsNeedingExtension);
+        await advanceCurrentWeek();
+        await updateMatchReportsHeader();
+        await createExtensionRooms(pairingsNeedingExtension);
         for (const matchup of matchupsMissingLineups) {
-            //await autoGenerateLineup(matchup, userForAutoLineups);
+            await autoGenerateLineup(matchup, userForAutoLineups);
         }
         const groupedPairings = groupPairingsByRoom(await loadAllPairings(currentSeason.number, currentSeason.current_week));
-        //await updateMatchRooms(groupedPairings);
+        await updateMatchRooms(groupedPairings);
         await postPredictions(groupedPairings);
-        //await postScheduling(groupedPairings);
+        await postScheduling(groupedPairings);
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
