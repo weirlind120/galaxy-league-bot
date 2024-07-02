@@ -85,7 +85,7 @@ export async function loadUndraftedPlayers(maxStars) {
 
 export async function loadPlayersForSubstitution(season, week, replacedPlayerSnowflake, newPlayerSnowflake) {
     const query =
-        'SELECT player.id, player.stars, player.discord_snowflake, team.discord_snowflake AS teamSnowflake, role.name AS roleName, \
+        'SELECT player.id, player.stars, player.name, player.discord_snowflake, team.discord_snowflake AS teamSnowflake, role.name AS roleName, \
                 pairing.slot, IIF(pairing.left_player = player.id, "left", "right") AS side, pairing.winner, pairing.dead, pairing.predictions_message FROM player \
          LEFT JOIN( \
              SELECT * FROM pairing \
