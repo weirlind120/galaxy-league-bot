@@ -376,7 +376,7 @@ async function substitutePlayer(interaction) {
         await channelMessage.edit(newChannelContent);
 
         await changeScheduledPlayer(matchup.schedule_message, replacedPlayer.discord_snowflake, newPlayer.discord_snowflake);
-        await changePredictionsPlayer(replacedPlayer.predictions_message, replacedPlayer.discord_snowflake, newPlayer.discord_snowflake);
+        await changePredictionsPlayer(replacedPlayer.predictions_message, replacedPlayer.name, newPlayer.name);
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);

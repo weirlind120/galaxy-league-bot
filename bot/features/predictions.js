@@ -36,10 +36,10 @@ async function sendPredictionMessage(predictionsChannel, content, leftEmoji, rig
     await savePredictionsMessageId(table, message.id, primaryKey);
 }
 
-export async function changePredictionsPlayer(predictionsMessageId, replacedPlayerSnowflake, newPlayerSnowflake) {
+export async function changePredictionsPlayer(predictionsMessageId, replacedPlayerName, newPlayerName) {
     const predictionsMessage = await getPredictionsMessage(predictionsMessageId);
 
-    const newPredictionContent = predictionsMessage.content.replace(replacedPlayerSnowflake, newPlayerSnowflake);
+    const newPredictionContent = predictionsMessage.content.replace(replacedPlayerName, newPlayerName);
     await predictionsMessage.edit(newPredictionContent);
 }
 
