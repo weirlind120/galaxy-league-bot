@@ -1,0 +1,8 @@
+{
+  "short_name": "Mushi League",
+  "name": "Tournament Data for Mushi League",
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#000000",
+  "background_color": "#ffffff"
+}
