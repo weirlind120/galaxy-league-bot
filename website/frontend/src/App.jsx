@@ -7,7 +7,7 @@ function App() {
   const [teamList, setTeamList] = useState();
 
     useEffect(() => {
-    fetch("http://localhost:3030/teamlist")
+    fetch("http://localhost:3000/teamlist")
       .then((x) => x.json())
       .then((x) => setTeamList(x))
       .catch((x) => console.log(x));

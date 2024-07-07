@@ -7,6 +7,7 @@ import {
 } from "../database/team.js";
 import { loadCurrentSeason } from "../database/season.js";
 import { openDb } from "../database/database.js";
+import 'dotenv/config';
 
 const app = express();
 const port = 3000;
