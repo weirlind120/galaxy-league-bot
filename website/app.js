@@ -10,7 +10,7 @@ import { openDb } from "../database/database.js";
 import 'dotenv/config';
 
 const app = express();
-const port = 3000;
+const port = 3001;
 
 app.get("/teamlist", async (req, res) => {
   const x = await loadActiveTeams();
