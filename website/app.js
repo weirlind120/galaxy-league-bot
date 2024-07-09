@@ -15,13 +15,13 @@ const port = 3001;
 
 app.use(cors());
 
-app.get("/teamlist", async (req, res) => {
+app.get("/api/teamlist", async (req, res) => {
   const x = await loadActiveTeams();
   res.set("Access-Control-Allow-Origin", "*");
   res.send(JSON.stringify(x));
 });
 
-app.get("/teaminfo/:id", async (req, res) => {
+app.get("/api/teaminfo/:id", async (req, res) => {
   const result = await loadTeamSheet(
     req.params.id,
     (await loadCurrentSeason()).number

@@ -7,7 +7,7 @@ function App() {
   const [teamList, setTeamList] = useState();
 
     useEffect(() => {
-    fetch("https://mushileague.gg/teamlist/")
+    fetch("https://mushileague.gg/api/teamlist/")
       .then((x) => x.json())
       .then((x) => setTeamList(x))
       .catch((x) => console.log(x));
