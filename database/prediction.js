@@ -37,7 +37,5 @@ export async function savePredictionsToDatabase(pairingId, predictions, leftPlay
         rightPlayerPredictions
     );
 
-    console.log(insertQuery);
-
     await db.run(insertQuery);
 }

@@ -6,7 +6,7 @@ import PlayerTable from "./PlayerTable";
 function Team({ id }) {
   const [info, setInfo] = useState();
   useEffect(() => {
-    fetch("http://localhost:3001/teaminfo/" + id)
+    fetch(`https://mushileague.gg/teaminfo/${id}/`)
       .then((x) => x.json())
       .then((x) => setInfo(x))
       .catch((x) => console.log(x));

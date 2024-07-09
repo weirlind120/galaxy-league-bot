@@ -8,9 +8,12 @@ import {
 import { loadCurrentSeason } from "../database/season.js";
 import { openDb } from "../database/database.js";
 import 'dotenv/config';
+import cors from 'cors';
 
 const app = express();
 const port = 3001;
+
+app.use(cors());
 
 app.get("/teamlist", async (req, res) => {
   const x = await loadActiveTeams();
