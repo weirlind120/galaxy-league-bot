@@ -1,11 +1,11 @@
 import { db } from './database.js';
 
 export async function saveDropAllPlayers() {
-    await db.run('UPDATE player SET retain_rights = team, team = NULL, role = NULL');
+    await db.run('UPDATE player SET active = false, retain_rights = team, team = NULL, role = NULL');
 }
 
 export async function saveStarPointsToRatings(season) {
-    await db.run('UPDATE player SET stars = (player.stars + (pstat.star_points / 100.0)) \
+    await db.run('UPDATE player SET stars = MAX(MIN(player.stars + (pstat.star_points / 100.0), 5), 1) \
                   FROM pstat WHERE pstat.player = player.id AND pstat.season = ?', season);
 }
 
@@ -15,6 +15,10 @@ export async function saveNewPlayer(snowflake, name, stars) {
 
 export async function savePlayerChange(snowflake, name, stars, team, role, active) {
     await db.run(`UPDATE player SET name = ?, stars = ?, team = ?, role = ?, active = ? WHERE discord_snowflake = ?`, name, stars, team, role, active, snowflake);
+}
+
+export async function loadAllActivePlayers() {
+    return await db.all('SELECT discord_snowflake FROM player WHERE active = 1');
 }
 
 export async function loadAllPlayersOnTeam(teamId) {
@@ -81,7 +85,7 @@ export async function loadUndraftedPlayers(maxStars) {
 
 export async function loadPlayersForSubstitution(season, week, replacedPlayerSnowflake, newPlayerSnowflake) {
     const query =
-        'SELECT player.id, player.stars, player.discord_snowflake, team.discord_snowflake AS teamSnowflake, role.name AS roleName, \
+        'SELECT player.id, player.stars, player.name, player.discord_snowflake, team.discord_snowflake AS teamSnowflake, role.name AS roleName, \
                 pairing.slot, IIF(pairing.left_player = player.id, "left", "right") AS side, pairing.winner, pairing.dead, pairing.predictions_message FROM player \
          LEFT JOIN( \
              SELECT * FROM pairing \

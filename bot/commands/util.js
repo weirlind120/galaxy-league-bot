@@ -137,7 +137,7 @@ export function userIsCaptain(user) {
 }
 
 export function userIsCoach(user) {
-    return user.roles.cache.has(process.env.captainRoleId);
+    return user.roles.cache.has(process.env.coachRoleId);
 }
 
 export function weekName(week) {

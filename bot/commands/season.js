@@ -14,7 +14,7 @@ import { saveNewWeeks } from '../../database/week.js';
 import { saveMatchRoomMessageId, saveOneNewMatchup, loadAllMatchups, loadMatchupsMissingLineups, loadOldPairingMessage } from '../../database/matchup.js';
 import { saveInitialStandings, loadStandingWeeksSoFar, loadStandings, saveStandingsUpdate, loadTopTeams } from '../../database/standing.js';
 import { loadTeams, loadActiveTeams, loadTeam } from '../../database/team.js';
-import { saveDropAllPlayers, saveStarPointsToRatings, loadAllPlayersOnTeam, loadPlayerFromSnowflake, loadPlayersOnTeamInStarOrder } from '../../database/player.js';
+import { saveDropAllPlayers, saveStarPointsToRatings, loadAllPlayersOnTeam, loadPlayerFromSnowflake, loadPlayersOnTeamInStarOrder, loadAllActivePlayers } from '../../database/player.js';
 import { loadAllPairings, loadAllPairingResults, loadOpenPairings } from '../../database/pairing.js';
 import { savePlayerStatUpdate } from '../../database/pstat.js';
 
@@ -83,7 +83,7 @@ async function newSeason(interaction) {
 
     async function onConfirm(data) {
         const { length, playoffSize } = data;
-        await saveDropAllPlayers();
+        await dropAllPlayers();
         await saveStarPointsToRatings(currentSeason.number);
         await makeSeasonAndWeeks(currentSeason.number + 1, length, playoffSize);
         await makeRegSeasonPairings(currentSeason.number + 1, length);
@@ -93,6 +93,27 @@ async function newSeason(interaction) {
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
+}
+
+async function dropAllPlayers() {
+    const allRemovableRoles = new Set([
+        ...(await loadActiveTeams()).map(x => x.discord_snowflake),
+        process.env.captainRoleId,
+        process.env.coachRoleId,
+        process.env.playerRoleId
+    ]);
+    const allActivePlayers = await loadAllActivePlayers();
+    for (const player of allActivePlayers) {
+        try {
+            const discordPlayer = await mushiLeagueGuild.members.fetch(player.discord_snowflake);
+            const rolesToRemove = [...discordPlayer.roles.cache.keys()].filter(snowflake => allRemovableRoles.has(snowflake));
+            discordPlayer.roles.remove(rolesToRemove);
+        }
+        catch (e) {
+            // pass
+		}
+	}
+    await saveDropAllPlayers();
 }
 
 async function makeSeasonAndWeeks(season, length, playoffSize) {

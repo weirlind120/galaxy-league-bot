@@ -19,7 +19,7 @@ async function postPredictionsForMatchup(predictionsChannel, pairingSet) {
     await sendPredictionMessage(predictionsChannel, headerMessage, pairingSet[0].leftEmoji, pairingSet[0].rightEmoji, 'matchup', pairingSet[0].matchup);
 
     for (const pairing of pairingSet) {
-        const pairingMessage = `${userMention(pairing.leftPlayerSnowflake)} vs ${userMention(pairing.rightPlayerSnowflake)}`;
+        const pairingMessage = `${pairing.leftPlayerName} vs ${pairing.rightPlayerName}`;
         await sendPredictionMessage(predictionsChannel, pairingMessage, pairing.leftEmoji, pairing.rightEmoji, 'pairing', pairing.id);
     }
 }
@@ -36,10 +36,10 @@ async function sendPredictionMessage(predictionsChannel, content, leftEmoji, rig
     await savePredictionsMessageId(table, message.id, primaryKey);
 }
 
-export async function changePredictionsPlayer(predictionsMessageId, replacedPlayerSnowflake, newPlayerSnowflake) {
+export async function changePredictionsPlayer(predictionsMessageId, replacedPlayerName, newPlayerName) {
     const predictionsMessage = await getPredictionsMessage(predictionsMessageId);
 
-    const newPredictionContent = predictionsMessage.content.replace(replacedPlayerSnowflake, newPlayerSnowflake);
+    const newPredictionContent = predictionsMessage.content.replace(replacedPlayerName, newPlayerName);
     await predictionsMessage.edit(newPredictionContent);
 }
 
@@ -116,17 +116,17 @@ async function updateMatchupPrediction(matchupPredictionsMessageId, winnerOnLeft
     await matchupPredictionsMessage.edit(newMatchupPredictionsContent);
 }
 
-export async function resetPredictionWinner(pairingPredictionsMessageId, matchupPredictionsMessageId, winnerWasOnLeft, pairingWasDead, leftPlayerSnowflake, rightPlayerSnowflake) {
-    await resetPairingPrediction(pairingPredictionsMessageId, leftPlayerSnowflake, rightPlayerSnowflake);
+export async function resetPredictionWinner(pairingPredictionsMessageId, matchupPredictionsMessageId, winnerWasOnLeft, pairingWasDead, leftPlayerName, rightPlayerName) {
+    await resetPairingPrediction(pairingPredictionsMessageId, leftPlayerName, rightPlayerName);
 
     if (!pairingWasDead) {
         await resetMatchupPrediction(matchupPredictionsMessageId, winnerWasOnLeft);
     }
 }
 
-async function resetPairingPrediction(pairingPredictionsMessageId, leftPlayerSnowflake, rightPlayerSnowflake) {
+async function resetPairingPrediction(pairingPredictionsMessageId, leftPlayerName, rightPlayerName) {
     const predictionsMessage = await getPredictionsMessage(pairingPredictionsMessageId);
-    const newPredictionsContent = `${userMention(leftPlayerSnowflake)} vs ${userMention(rightPlayerSnowflake)}`;
+    const newPredictionsContent = `${leftPlayerName} vs ${rightPlayerName}`;
     await predictionsMessage.edit(newPredictionsContent);
 }
 
