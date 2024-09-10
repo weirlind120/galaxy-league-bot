@@ -158,6 +158,6 @@ export async function wait(time) {
     return new Promise((resolve) => setTimeout(resolve, time));
 }
 
-export async function passThroughVerifier() { 
+export function passThroughVerifier() { 
     return [[], [], 'Dummy confirm', 'Success', 'Canceled'];
 };
