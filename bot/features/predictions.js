@@ -134,8 +134,8 @@ async function resetMatchupPrediction(matchupPredictionsMessageId, winnerWasOnLe
     const matchupPredictionsMessage = await getPredictionsMessage(matchupPredictionsMessageId);
     const score = matchupPredictionsMessage.content.substring(matchupPredictionsMessage.content.length - 3, matchupPredictionsMessage.content.length);
     const newScore = winnerWasOnLeft
-        ? ''.concat(parseInt(score.charAt(0)) - 1, score.substring(1))
-        : score.substring(0, 2).concat(parseInt(score.charAt(2)) - 1);
+        ? `${parseInt(score.charAt(0)) - 1}${score.substring(1)}`
+        : `${score.substring(0, 2)}${parseInt(score.charAt(2)) - 1}`;
     const newMatchupPredictionsContent = matchupPredictionsMessage.content.substring(0, matchupPredictionsMessage.content.length - 3).concat(newScore);
     await matchupPredictionsMessage.edit(newMatchupPredictionsContent);
 }

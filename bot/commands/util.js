@@ -157,3 +157,7 @@ export function weekName(week) {
 export async function wait(time) {
     return new Promise((resolve) => setTimeout(resolve, time));
 }
+
+export function passThroughVerifier() { 
+    return [[], [], 'Dummy confirm', 'Success', 'Canceled'];
+};
