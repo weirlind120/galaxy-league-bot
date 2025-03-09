@@ -202,8 +202,8 @@ async function renamePlayer(interaction) {
     }
 
     async function onConfirm(data) {
-        const { playerSnowflake, name, existingPlayer } = data;
-        await savePlayerChange(playerSnowflake, name, existingPlayer.stars, existingPlayer.teamId, existingPlayer.roleId, existingPlayer.active);
+        const { name, existingPlayer } = data;
+        await savePlayerChange(existingPlayer.id, name, existingPlayer.stars, existingPlayer.teamId, existingPlayer.roleId, existingPlayer.active);
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
@@ -243,8 +243,8 @@ async function ratePlayer(interaction) {
     }
 
     async function onConfirm(data) {
-        const { playerSnowflake, stars, existingPlayer } = data;
-        await savePlayerChange(playerSnowflake, existingPlayer.name, stars, existingPlayer.teamId, existingPlayer.roleId, existingPlayer.active);
+        const { stars, existingPlayer } = data;
+        await savePlayerChange(existingPlayer.id, existingPlayer.name, stars, existingPlayer.teamId, existingPlayer.roleId, existingPlayer.active);
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
@@ -321,7 +321,7 @@ async function assignPlayer(interaction) {
 
         const newTeamId = (await loadTeamFromSnowflake(newTeam.id)).id;
         const newRoleId = (await loadRoleFromSnowflake(newRole.id)).id;
-        await savePlayerChange(player.id, existingPlayer.name, existingPlayer.stars, newTeamId, newRoleId, existingPlayer.active);
+        await savePlayerChange(existingPlayer.id, existingPlayer.name, existingPlayer.stars, newTeamId, newRoleId, existingPlayer.active);
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);
@@ -369,7 +369,7 @@ async function dropPlayer(interaction) {
     async function onConfirm(data) {
         const { player, existingPlayer } = data;
 
-        await savePlayerChange(existingPlayer.discord_snowflake, existingPlayer.name, existingPlayer.stars, null, null, existingPlayer.active);
+        await savePlayerChange(existingPlayer.id, existingPlayer.name, existingPlayer.stars, null, null, existingPlayer.active);
         player?.roles.remove([existingPlayer.roleSnowflake, existingPlayer.teamSnowflake]);
     }
 
@@ -412,7 +412,7 @@ async function setPlayerInactive(interaction) {
 
     async function onConfirm(data) {
         const { player, existingPlayer } = data;
-        await savePlayerChange(existingPlayer.discord_snowflake, existingPlayer.name, existingPlayer.stars, null, null, 0);
+        await savePlayerChange(existingPlayer.id, existingPlayer.name, existingPlayer.stars, null, null, 0);
 
         if (existingPlayer.teamSnowflake) {
             player?.roles.remove([existingPlayer.roleSnowflake, existingPlayer.teamSnowflake]);
@@ -454,8 +454,8 @@ async function setPlayerActive(interaction) {
     }
 
     async function onConfirm(data) {
-        const { playerSnowflake, existingPlayer } = data;
-        await savePlayerChange(playerSnowflake, existingPlayer.name, existingPlayer.stars, existingPlayer.team, existingPlayer.role, 1);
+        const { existingPlayer } = data;
+        await savePlayerChange(existingPlayer.id, existingPlayer.name, existingPlayer.stars, existingPlayer.team, existingPlayer.role, 1);
     }
 
     await baseHandler(interaction, dataCollector, verifier, onConfirm, false, false);

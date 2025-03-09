@@ -12,11 +12,18 @@ export async function loadActiveTeams() {
 
 export async function loadTeamSheet(teamId, season) {
   const teamInfo = await db.get(
-    "SELECT team.name, team.discord_snowflake AS snowflake, wins, losses, ties FROM standing JOIN team ON team = team.id WHERE standing.team = ? AND season = ?;",
+    "SELECT team.name, team.id, team.color, wins, losses, ties, points, battle_differential FROM standing INNER JOIN team ON team = team.id WHERE standing.team = ? AND season = ?;",
     teamId,
     season
   );
-  teamInfo.players = await loadTeamData(teamInfo.snowflake, season);
+  const playerQuery =
+    "SELECT player.name, player.id, pstat.wins, pstat.act_wins, pstat.losses, pstat.act_losses, pstat.ties, pstat.star_points, pstat.stars, role.name AS role FROM roster \
+     INNER JOIN player ON player.id = roster.player \
+     LEFT JOIN pstat ON pstat.player = roster.player AND pstat.season = roster.season \
+     INNER JOIN role ON role.id = roster.role \
+     WHERE roster.season = ? AND roster.team = ? \
+     ORDER BY pstat.stars DESC";
+  teamInfo.players = await db.all(playerQuery, season, teamId);
   return teamInfo;
 }
 
